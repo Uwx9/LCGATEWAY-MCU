@@ -1,6 +1,10 @@
-obj/src/main.o: src/main.c Firmware/CMSIS/GD/GD32F3x0/Include/gd32f3x0.h \
- Firmware/CMSIS/core_cm4.h Firmware/CMSIS/core_cmInstr.h \
- Firmware/CMSIS/core_cmFunc.h Firmware/CMSIS/core_cm4_simd.h \
+obj/src/main.o: src/main.c FreeRTOS/include/FreeRTOS.h \
+ src/FreeRTOSConfig.h FreeRTOS/include/projdefs.h \
+ FreeRTOS/include/portable.h FreeRTOS/include/deprecated_definitions.h \
+ FreeRTOS/include/portmacro.h FreeRTOS/include/mpu_wrappers.h \
+ Firmware/CMSIS/GD/GD32F3x0/Include/gd32f3x0.h Firmware/CMSIS/core_cm4.h \
+ Firmware/CMSIS/core_cmInstr.h Firmware/CMSIS/core_cmFunc.h \
+ Firmware/CMSIS/core_cm4_simd.h \
  Firmware/CMSIS/GD/GD32F3x0/Include/system_gd32f3x0.h \
  src/gd32f3x0_libopt.h \
  Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_adc.h \
@@ -23,7 +27,14 @@ obj/src/main.o: src/main.c Firmware/CMSIS/GD/GD32F3x0/Include/gd32f3x0.h \
  Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_wwdgt.h \
  Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_misc.h \
  Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_tsi.h \
- src/gd32f3x0_libopt.h src/systick.h
+ src/gd32f3x0_libopt.h FreeRTOS/include/task.h FreeRTOS/include/list.h
+FreeRTOS/include/FreeRTOS.h:
+src/FreeRTOSConfig.h:
+FreeRTOS/include/projdefs.h:
+FreeRTOS/include/portable.h:
+FreeRTOS/include/deprecated_definitions.h:
+FreeRTOS/include/portmacro.h:
+FreeRTOS/include/mpu_wrappers.h:
 Firmware/CMSIS/GD/GD32F3x0/Include/gd32f3x0.h:
 Firmware/CMSIS/core_cm4.h:
 Firmware/CMSIS/core_cmInstr.h:
@@ -52,4 +63,5 @@ Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_wwdgt.h:
 Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_misc.h:
 Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_tsi.h:
 src/gd32f3x0_libopt.h:
-src/systick.h:
+FreeRTOS/include/task.h:
+FreeRTOS/include/list.h:
