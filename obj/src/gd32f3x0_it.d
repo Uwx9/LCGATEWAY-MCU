@@ -23,8 +23,7 @@ obj/src/gd32f3x0_it.o: src/gd32f3x0_it.c src/gd32f3x0_it.h \
  Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_usart.h \
  Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_wwdgt.h \
  Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_misc.h \
- Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_tsi.h \
- src/systick.h
+ Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_tsi.h
 src/gd32f3x0_it.h:
 Firmware/CMSIS/GD/GD32F3x0/Include/gd32f3x0.h:
 Firmware/CMSIS/core_cm4.h:
@@ -53,4 +52,3 @@ Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_usart.h:
 Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_wwdgt.h:
 Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_misc.h:
 Firmware/GD32F3x0_standard_peripheral/Include/gd32f3x0_tsi.h:
-src/systick.h:
