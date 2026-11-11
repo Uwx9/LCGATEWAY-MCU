@@ -57,12 +57,26 @@ $(TARGET).bin: $(TARGET).elf
 
 -include $(DEPS)
 
+format:
+	@astyle --style=linux src/main.c
+
+flash: flash-pyocd
+
+flash-isp:
+	#TODO 使用GD32 ISP CONSOLE 烧录
+
+flash-pyocd:
+	#TODO 使用 pyocd  烧录
+	
 clean:                                                                                                                           
 	@rm -rf $(OBJDIR) $(TARGET).elf $(TARGET).bin $(TARGET).map
 
 debug:
+	#TODO 使用pyocd + gdb调试
+
+echo:
 	@echo "SRCS: $(SRCS)"
 	@echo "OBJS: $(OBJS)"
 	@echo "DEPS: $(DEPS)"
 
-.PHONY: all clean debug
+.PHONY: all format flash flash-isp flash-pyocd clean debug echo
