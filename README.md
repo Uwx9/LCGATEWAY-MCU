@@ -30,3 +30,7 @@ bin:
 .bin文件单纯是可加载段，也不会额外补0
 
 唯一需要copy的.data节的lma是链接脚本的_sidata,vma 是_sdata，这样就知道拷贝时的地址
+
+TODO
+使用EGGERRTT
+

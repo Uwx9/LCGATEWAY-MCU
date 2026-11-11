@@ -60,19 +60,23 @@ $(TARGET).bin: $(TARGET).elf
 format:
 	@astyle --style=linux src/main.c
 
-flash: flash-pyocd
+flash: flash-rs
 
+#TODO 使用probe-rs 烧录
+flash-rs:
+
+#TODO 使用GD32 ISP CONSOLE 烧录
 flash-isp:
-	#TODO 使用GD32 ISP CONSOLE 烧录
 
+#TODO 使用 pyocd  烧录
 flash-pyocd:
-	#TODO 使用 pyocd  烧录
-	
+
+
 clean:                                                                                                                           
 	@rm -rf $(OBJDIR) $(TARGET).elf $(TARGET).bin $(TARGET).map
 
 debug:
-	#TODO 使用pyocd + gdb调试
+	#TODO 使用probe-rs + gdb调试
 
 echo:
 	@echo "SRCS: $(SRCS)"
