@@ -1,6 +1,6 @@
 /*!
     \file    main.c
-    \brief   USART send and receive
+    \brief   transmit/receive data using DMA interrupt
 
     \version 2026-01-01, V2.6.0, firmware for GD32F3x0
 */
@@ -33,90 +33,166 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f3x0.h"
-#include <stdio.h>
+#include "FreeRTOSConfig.h"
+#include "parse.h"
 
-#define USART_PERIPH      USART0
-#define USART_CLK         RCU_USART0
-#define USART_GPIO_PORT   GPIOA
-#define USART_GPIO_CLK    RCU_GPIOA
-#define USART_GPIO_AF     GPIO_AF_1
-#define USART_TX_PIN      GPIO_PIN_9
-#define USART_RX_PIN      GPIO_PIN_10
-#define USART_BAUDRATE    115200U
+#define USART0_RDATA_ADDRESS      ((uint32_t)&USART_RDATA(USART0))
+#define USART0_TDATA_ADDRESS      ((uint32_t)&USART_TDATA(USART0))
+#define ARRAYNUM(arr_nanme)       (uint32_t)(sizeof(arr_nanme) / sizeof(*(arr_nanme)))
+#define RXBUF_SIZE                256
 
-static void usart_config(void);
-static void usart_send_byte(uint8_t data);
-static void usart_send_string(const char *str);
-static uint8_t usart_receive_byte(uint8_t *data);
+void dma_usart_prepare(void);
+void dma_rx_start_cmdmode(void)
+void dma_tx_start_cmdmode(void)
+void dma_rx_start_downloadmode(void)
+void com_usart_init(void);
 
-/* printf 重定向到串口 */
-int __io_putchar(int ch)
-{
-    usart_send_byte((uint8_t)ch);
-    return ch;
-}
+__IO FlagStatus g_transfer_complete = RESET;
+__IO FlagStatus g_usart0_rx_idle = RESET;
 
-static void usart_config(void)
-{
-    rcu_periph_clock_enable(USART_GPIO_CLK);
-    rcu_periph_clock_enable(USART_CLK);
+uint8_t txbuffer[] = "\n\rUSART DMA interrupt receive and transmit example, please input 10 bytes:\n\r";
 
-    /* PA9 -> USART0_TX, PA10 -> USART0_RX */
-    gpio_af_set(USART_GPIO_PORT, USART_GPIO_AF, USART_TX_PIN | USART_RX_PIN);
-    gpio_mode_set(USART_GPIO_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP,
-                  USART_TX_PIN | USART_RX_PIN);
-    gpio_output_options_set(USART_GPIO_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ,
-                            USART_TX_PIN);
+static TaskHandle_t  rx_task_handle;
 
-    usart_deinit(USART_PERIPH);
-    usart_word_length_set(USART_PERIPH, USART_WL_8BIT);
-    usart_stop_bit_set(USART_PERIPH, USART_STB_1BIT);
-    usart_parity_config(USART_PERIPH, USART_PM_NONE);
-    usart_baudrate_set(USART_PERIPH, USART_BAUDRATE);
-    usart_receive_config(USART_PERIPH, USART_RECEIVE_ENABLE);
-    usart_transmit_config(USART_PERIPH, USART_TRANSMIT_ENABLE);
-    usart_enable(USART_PERIPH);
-}
-
-static void usart_send_byte(uint8_t data)
-{
-    while(RESET == usart_flag_get(USART_PERIPH, USART_FLAG_TBE)) {
-    }
-    usart_data_transmit(USART_PERIPH, data);
-}
-
-static void usart_send_string(const char *str)
-{
-    while('\0' != *str) {
-        usart_send_byte((uint8_t)*str++);
-    }
-    /* 等最后一个字节移出移位寄存器 */
-    while(RESET == usart_flag_get(USART_PERIPH, USART_FLAG_TC)) {
-    }
-}
-
-static uint8_t usart_receive_byte(uint8_t *data)
-{
-    if(RESET == usart_flag_get(USART_PERIPH, USART_FLAG_RBNE)) {
-        return 0U;
-    }
-
-    *data = (uint8_t)usart_data_receive(USART_PERIPH);
-    return 1U;
+static void rx_task(void *arg)                                                                                                             
+{                                                                                                                                          
+    /* 开始接收命令 */
+    dma_rx_start_cmdmode();
+    for (;;) {                                                                                                                             
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        process_all_available();                   /* 一次把 DMA 环里新数据取完 */                                                         
+    }                                                                                                                                      
 }
 
 int main(void)
 {
-    uint8_t data;
+    /* 1. 优先级分组必须在所有 nvic_irq_enable 之前 */
+    nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
 
-    usart_config();
+    /* 2. 时钟、GPIO、USART 基础配置 */
+    dma_usart_prepare();
 
-    usart_send_string("\r\nGD32F310 USART0 ready, 115200 8N1\r\n");
+    /* 3. 创建任务 */
+    BaseType_t ret = xTaskCreate(rx_task, "rx", 256, NULL, 4, &rx_task_handle);
+    configASSERT(ret == pdPASS);
 
-    while(1) {
-        /* 收到什么就回什么 */
-        if(usart_receive_byte(&data)) {
-            usart_send_byte(data);
-        }
+    /* 正常不返回 */
+    vTaskStartScheduler();
+
+    for (;;) {
+
     }
+}
+
+/* 设置dmaCH2将串口的数据 '循环' 搬运到内存, 串口rx空闲时产生中断, 中断通知任务处理数据 */
+static void dma_rx_start_cmdmode(void)
+{
+    dma_parameter_struct dma_init_struct;
+
+    /* initialize DMA channel2 */
+    dma_deinit(DMA_CH2);
+    dma_struct_para_init(&dma_init_struct);
+    dma_init_struct.direction    = DMA_PERIPHERAL_TO_MEMORY;
+    dma_init_struct.memory_addr  = (uint32_t)rxbuffer;
+    dma_init_struct.memory_inc   = DMA_MEMORY_INCREASE_ENABLE;
+    dma_init_struct.memory_width = DMA_MEMORY_WIDTH_8BIT;
+    dma_init_struct.number       = ARRAYNUM(rxbuffer);
+    dma_init_struct.periph_addr  = (uint32_t)USART0_RDATA_ADDRESS;
+    dma_init_struct.periph_inc   = DMA_PERIPH_INCREASE_DISABLE;
+    dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_8BIT;
+    dma_init_struct.priority     = DMA_PRIORITY_ULTRA_HIGH;
+    dma_init(DMA_CH2, &dma_init_struct);
+
+    /* configure DMA mode */
+    dma_circulation_enable(DMA_CH2);
+    dma_memory_to_memory_disable(DMA_CH2);
+
+    /* 靠空闲中断叫醒 CPU */
+    usart_interrupt_enable(USART0, USART_INT_IDLE);
+    /* 抢占优先级0, 子优先级0 */
+    nvic_irq_enable(USART0_IRQn, 5, 0);
+
+    /* enable DMA channel2 */
+    dma_channel_enable(DMA_CH2);
+}
+
+
+/* 设置dmaCH1将内存中的数据搬运到串口tx并产生中断 */
+static void dma_tx_start_cmdmode(void)
+{
+    dma_parameter_struct dma_init_struct;
+
+    /* initialize DMA channel1 */
+    dma_deinit(DMA_CH1);
+    dma_struct_para_init(&dma_init_struct);
+
+    dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
+    dma_init_struct.memory_addr  = (uint32_t)txbuffer;
+    dma_init_struct.memory_inc   = DMA_MEMORY_INCREASE_ENABLE;
+    dma_init_struct.memory_width = DMA_MEMORY_WIDTH_8BIT;
+    dma_init_struct.number       = ARRAYNUM(txbuffer);
+    dma_init_struct.periph_addr  = (uint32_t)USART0_TDATA_ADDRESS;
+    dma_init_struct.periph_inc   = DMA_PERIPH_INCREASE_DISABLE;
+    dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_8BIT;
+    dma_init_struct.priority     = DMA_PRIORITY_ULTRA_HIGH;
+    dma_init(DMA_CH1, &dma_init_struct);
+
+    /* configure DMA mode */
+    dma_circulation_disable(DMA_CH1);
+    dma_memory_to_memory_disable(DMA_CH1);
+
+    /* enable DMA channel1 transfer complete interrupt */
+    dma_interrupt_enable(DMA_CH1, DMA_INT_FTF);
+    /* 抢占优先级1, 子优先级0 */
+    nvic_irq_enable(DMA_Channel1_2_IRQn, 6, 0);
+
+    /* enable DMA channel1 */
+    dma_channel_enable(DMA_CH1);
+}
+
+static void com_usart_init(void)
+{
+    /* enable COM GPIO clock */
+    rcu_periph_clock_enable(RCU_GPIOA);
+    /* enable USART clock */
+    rcu_periph_clock_enable(RCU_USART0);
+
+    /* connect port to USART TX */
+    gpio_af_set(GPIOA, GPIO_AF_1, GPIO_PIN_9);
+
+    /* connect port to USART RX */
+    gpio_af_set(GPIOA, GPIO_AF_1, GPIO_PIN_10);
+
+    /* configure USART Tx as alternate function push-pull */
+    gpio_mode_set(GPIOA, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_9);
+    gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_10MHZ, GPIO_PIN_9);
+
+    /* configure USART Rx as alternate function push-pull */
+    gpio_mode_set(GPIOA, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_10);
+    gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_10MHZ, GPIO_PIN_10);
+
+    /* configure USART */
+    usart_deinit(USART0);
+    usart_word_length_set(USART0, USART_WL_8BIT);
+    usart_stop_bit_set(USART0, USART_STB_1BIT);
+    usart_parity_config(USART0, USART_PM_NONE);
+    usart_baudrate_set(USART0, 115200U);
+    usart_receive_config(USART0, USART_RECEIVE_ENABLE);
+    usart_transmit_config(USART0, USART_TRANSMIT_ENABLE);
+    /* enable USART DMA for transmission */
+    usart_dma_transmit_config(USART0, USART_TRANSMIT_DMA_ENABLE);
+    /* enable USART DMA for reception */
+    usart_dma_receive_config(USART0, USART_RECEIVE_DMA_ENABLE);
+    usart_enable(USART0);
+}
+
+/*
+ * 开启dma时钟, 初始化usart
+ */
+static void dma_usart_prepare(void)
+{
+    /* enable DMA clock */
+    rcu_periph_clock_enable(RCU_DMA);
+    /* initialize the com */
+    com_usart_init();
 }

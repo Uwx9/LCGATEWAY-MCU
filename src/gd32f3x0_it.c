@@ -150,3 +150,27 @@ void DebugMon_Handler(void)
 // {
 //     delay_decrement();
 // }
+
+/*!
+    \brief      this function handles DMA_Channel1_2_IRQHandler interrupt
+    \param[in]  none
+    \param[out] none
+    \retval     none
+*/
+void DMA_Channel1_2_IRQHandler(void)
+{
+    //TODO这是啥,看下手册
+    if(RESET != dma_interrupt_flag_get(DMA_CH1, DMA_INT_FLAG_FTF)) {
+        dma_interrupt_flag_clear(DMA_CH1, DMA_INT_FLAG_G);
+        g_transfer_complete = SET;
+    }
+}
+
+void USART0_IRQHandler(void)
+{
+    /* 总线空闲产生idle中断 */
+    if (RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_IDLE)) {
+        usart_interrupt_flag_clear(USART0, USART_INT_FLAG_IDLE);
+        g_usart0_rx_idle = SET;
+    }
+}
