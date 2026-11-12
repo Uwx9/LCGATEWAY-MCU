@@ -54,14 +54,14 @@ uint8_t txbuffer[] = "\n\rUSART DMA interrupt receive and transmit example, plea
 
 static TaskHandle_t  rx_task_handle;
 
-static void rx_task(void *arg)                                                                                                             
-{                                                                                                                                          
+static void rx_task(void *arg)
+{
     /* 开始接收命令 */
     dma_rx_start_cmdmode();
-    for (;;) {                                                                                                                             
+    for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        process_all_available();                   /* 一次把 DMA 环里新数据取完 */                                                         
-    }                                                                                                                                      
+        process_all_available();                   /* 一次把 DMA 环里新数据取完 */
+    }
 }
 
 int main(void)

@@ -58,7 +58,7 @@ $(TARGET).bin: $(TARGET).elf
 -include $(DEPS)
 
 format:
-	@astyle --style=linux src/main.c
+	@astyle -n --style=linux src/main.c src/parse.c src/parse.h
 
 flash: flash-rs
 
