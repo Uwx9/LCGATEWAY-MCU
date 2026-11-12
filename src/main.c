@@ -1,86 +1,62 @@
-/*!
-    \file    main.c
-    \brief   transmit/receive data using DMA interrupt
-
-    \version 2026-01-01, V2.6.0, firmware for GD32F3x0
-*/
-
-/*
-    Copyright (c) 2026, GigaDevice Semiconductor Inc.
-
-    Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-    1. Redistributions of source code must retain the above copyright notice, this
-       list of conditions and the following disclaimer.
-    2. Redistributions in binary form must reproduce the above copyright notice,
-       this list of conditions and the following disclaimer in the documentation
-       and/or other materials provided with the distribution.
-    3. Neither the name of the copyright holder nor the names of its contributors
-       may be used to endorse or promote products derived from this software without
-       specific prior written permission.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
-INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
-OF SUCH DAMAGE.
-*/
-
+#include "FreeRTOS.h"
 #include "gd32f3x0.h"
-#include "FreeRTOSConfig.h"
+#include "task.h"
 #include "parse.h"
 
 #define USART0_RDATA_ADDRESS      ((uint32_t)&USART_RDATA(USART0))
 #define USART0_TDATA_ADDRESS      ((uint32_t)&USART_TDATA(USART0))
-#define ARRAYNUM(arr_nanme)       (uint32_t)(sizeof(arr_nanme) / sizeof(*(arr_nanme)))
-#define RXBUF_SIZE                256
 
-void dma_usart_prepare(void);
-void dma_rx_start_cmdmode(void)
-void dma_tx_start_cmdmode(void)
-void dma_rx_start_downloadmode(void)
-void com_usart_init(void);
+uint8_t rxbuffer[RXBUF_SIZE];
+static uint8_t txbuffer[64];
 
+volatile uint32_t rx_dma_wraps = 0;
 __IO FlagStatus g_transfer_complete = RESET;
-__IO FlagStatus g_usart0_rx_idle = RESET;
 
-uint8_t txbuffer[] = "\n\rUSART DMA interrupt receive and transmit example, please input 10 bytes:\n\r";
+static void dma_rx_start_cmdmode(void);
 
-static TaskHandle_t  rx_task_handle;
-
-static void rx_task(void *arg)
+void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
 {
-    /* 开始接收命令 */
-    dma_rx_start_cmdmode();
+    (void)task;
+    (void)task_name;
+    taskDISABLE_INTERRUPTS();
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        process_all_available();                   /* 一次把 DMA 环里新数据取完 */
     }
 }
 
-int main(void)
+/* 返回 DMA 已写入的绝对字节数，读数期间若发生套圈则重读 */
+uint32_t rx_dma_total(void)
 {
-    /* 1. 优先级分组必须在所有 nvic_irq_enable 之前 */
-    nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
+    uint32_t lap_a;
+    uint32_t lap_b;
+    uint32_t cnt;
+    uint16_t pos;
 
-    /* 2. 时钟、GPIO、USART 基础配置 */
-    dma_usart_prepare();
+    do {
+        lap_a = rx_dma_wraps;
+        cnt   = dma_transfer_number_get(DMA_CH2);
+        lap_b = rx_dma_wraps;
+    } while (lap_a != lap_b);
 
-    /* 3. 创建任务 */
-    BaseType_t ret = xTaskCreate(rx_task, "rx", 256, NULL, 4, &rx_task_handle);
-    configASSERT(ret == pdPASS);
+    /* cnt 为 0 或等于 RXBUF_SIZE 都表示刚好走到一圈的起点 */
+    if (cnt >= RXBUF_SIZE) {
+        pos = 0;
+    } else {
+        pos = (uint16_t)(RXBUF_SIZE - cnt);
+    }
+    return lap_a * RXBUF_SIZE + pos;
+}
 
-    /* 正常不返回 */
-    vTaskStartScheduler();
+static void rx_task(void *arg)
+{
+    (void)arg;
+
+    /* 先复位解析器，再启动 DMA，保证两边从同一个起点开始 */
+    parse_init();
+    dma_rx_start_cmdmode();
 
     for (;;) {
-
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        process_all_available();
     }
 }
 
@@ -96,7 +72,7 @@ static void dma_rx_start_cmdmode(void)
     dma_init_struct.memory_addr  = (uint32_t)rxbuffer;
     dma_init_struct.memory_inc   = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.memory_width = DMA_MEMORY_WIDTH_8BIT;
-    dma_init_struct.number       = ARRAYNUM(rxbuffer);
+    dma_init_struct.number       = RXBUF_SIZE;
     dma_init_struct.periph_addr  = (uint32_t)USART0_RDATA_ADDRESS;
     dma_init_struct.periph_inc   = DMA_PERIPH_INCREASE_DISABLE;
     dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_8BIT;
@@ -107,15 +83,18 @@ static void dma_rx_start_cmdmode(void)
     dma_circulation_enable(DMA_CH2);
     dma_memory_to_memory_disable(DMA_CH2);
 
+    /* 搬满一圈产生中断，用于统计绝对写入量、检测 overrun */
+    dma_interrupt_enable(DMA_CH2, DMA_INT_FTF);
+
     /* 靠空闲中断叫醒 CPU */
     usart_interrupt_enable(USART0, USART_INT_IDLE);
-    /* 抢占优先级0, 子优先级0 */
+    /* 抢占优先级5, 子优先级0；不高于 configMAX_SYSCALL_INTERRUPT_PRIORITY */
     nvic_irq_enable(USART0_IRQn, 5, 0);
+    nvic_irq_enable(DMA_Channel1_2_IRQn, 6, 0);
 
     /* enable DMA channel2 */
     dma_channel_enable(DMA_CH2);
 }
-
 
 /* 设置dmaCH1将内存中的数据搬运到串口tx并产生中断 */
 static void dma_tx_start_cmdmode(void)
@@ -130,7 +109,7 @@ static void dma_tx_start_cmdmode(void)
     dma_init_struct.memory_addr  = (uint32_t)txbuffer;
     dma_init_struct.memory_inc   = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.memory_width = DMA_MEMORY_WIDTH_8BIT;
-    dma_init_struct.number       = ARRAYNUM(txbuffer);
+    dma_init_struct.number       = sizeof(txbuffer);
     dma_init_struct.periph_addr  = (uint32_t)USART0_TDATA_ADDRESS;
     dma_init_struct.periph_inc   = DMA_PERIPH_INCREASE_DISABLE;
     dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_8BIT;
@@ -143,7 +122,7 @@ static void dma_tx_start_cmdmode(void)
 
     /* enable DMA channel1 transfer complete interrupt */
     dma_interrupt_enable(DMA_CH1, DMA_INT_FTF);
-    /* 抢占优先级1, 子优先级0 */
+    /* 抢占优先级6, 子优先级0 */
     nvic_irq_enable(DMA_Channel1_2_IRQn, 6, 0);
 
     /* enable DMA channel1 */
@@ -195,4 +174,24 @@ static void dma_usart_prepare(void)
     rcu_periph_clock_enable(RCU_DMA);
     /* initialize the com */
     com_usart_init();
+}
+
+TaskHandle_t rx_task_handle;
+int main(void)
+{
+    /* 1. 优先级分组必须在所有 nvic_irq_enable 之前 */
+    nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
+
+    /* 2. 时钟、GPIO、USART 基础配置 */
+    dma_usart_prepare();
+
+    /* 3. 创建任务 */
+    BaseType_t ret = xTaskCreate(rx_task, "rx", 256, NULL, 4, &rx_task_handle);
+    configASSERT(ret == pdPASS);
+
+    /* 正常不返回 */
+    vTaskStartScheduler();
+
+    for (;;) {
+    }
 }
