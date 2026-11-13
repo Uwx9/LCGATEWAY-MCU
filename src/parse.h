@@ -1,6 +1,8 @@
 #ifndef PARSE_H
 #define PARSE_H
 
+#include <stdint.h>
+
 #include "parse-error.h"
 
 #define FRAME_HEAD      0x40
@@ -25,7 +27,7 @@
 #define RXBUF_SIZE      256U
 
 /* 初始化解析器（必须在启动 DMA 接收之前调用） */
-void parse_reset(void);
+void parse_init(void);
 
 /*
  * 解析 DMA 环形缓冲中 [已读位置, DMA 当前写入位置) 的所有字节。

@@ -23,25 +23,22 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
     }
 }
 
-/* 返回DMA下一个要写入的位置 */
+/* 返回 DMA 下一个要写入的位置（0 .. RXBUF_SIZE-1） */
 uint16_t rx_dma_cur_pos(void)
 {
-    uint16_t cnt = dma_transfer_number_get(DMA_CH2);
-#ifdef DEBUG
-    configASSERT(0 <= cnt <= RXBUF_SIZE);
-    configASSERT(cnt != 0);
-#endif
-    // 剩余要搬运字节cnt不应该为0
-    return (RXBUF_SIZE - cnt) % RXBUF_SIZE;
+    uint32_t cnt = dma_transfer_number_get(DMA_CH2);
+
+    /* CNT 为 0 或 RXBUF_SIZE 都表示刚好处在环起点 */
+    return (uint16_t)((cnt >= RXBUF_SIZE) ? 0U : (RXBUF_SIZE - cnt));
 }
 
-/* 返回 DMA 已写入的绝对字节数，和当前pos，读数期间若发生套圈则重读 */
+/* 返回 DMA 已写入的绝对字节数；读数期间若发生套圈则重读 */
 uint32_t rx_dma_total(void)
 {
     uint32_t lap_a;
     uint32_t lap_b;
     uint32_t cnt;
-    uint16_t pos;
+    uint32_t pos;
 
     do {
         lap_a = rx_dma_wraps;
@@ -50,11 +47,8 @@ uint32_t rx_dma_total(void)
     } while (lap_a != lap_b);
 
     /* cnt 为 0 或等于 RXBUF_SIZE 都表示刚好走到一圈的起点 */
-    if (cnt >= RXBUF_SIZE) {
-        pos = 0;
-    } else {
-        pos = (uint16_t)(RXBUF_SIZE - cnt);
-    }
+    pos = (cnt >= RXBUF_SIZE) ? 0U : (RXBUF_SIZE - cnt);
+
     return lap_a * RXBUF_SIZE + pos;
 }
 
@@ -63,7 +57,7 @@ static void rx_task(void *arg)
     (void)arg;
 
     /* 先复位解析器，再启动 DMA */
-    parse_reset();
+    parse_init();
     dma_rx_start_cmdmode();
 
     for (;;) {

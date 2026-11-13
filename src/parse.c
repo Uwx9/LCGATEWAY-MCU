@@ -1,7 +1,6 @@
-#include "FreeRTOS.h"
-#include "parse-error.h"
 #include "parse.h"
-#include "task.h"
+
+#include <stdint.h>
 
 /* LEN 字段合法范围：至少要 5 字节头，整帧又不能超过接收缓冲 */
 #define FRAME_LEN_MIN   FRAME_HDR_LEN
@@ -16,19 +15,31 @@ static struct {
     uint16_t idx;
     uint8_t  len;      /* LEN 字段 */
     uint8_t  need;     /* 还差多少个数据字节 */
-    uint8_t  buf[RXBUF_SIZE];
+    uint8_t  buf[FRAME_LEN_MAX + 2U];  /* 整帧：HEAD..DATA + CRC */
 } p;
 
-extern uint32_t rx_dma_total(void);
-extern uint16_t rx_dma_cur_pos(void);
+/* 环的读指针：已经消费掉的绝对字节数，只在解析任务里修改 */
+static uint32_t read_total;
 
-/* 解析器初始状态 */
-void parse_reset(void)
+/* 由 main.c 提供的 DMA 环写指针（绝对字节数） */
+extern uint32_t rx_dma_total(void);
+
+extern uint8_t rxbuffer[RXBUF_SIZE];
+
+/* 状态机复位，不影响环的读指针 */
+static void parse_reset(void)
 {
     p.st  = S_HEAD;
     p.idx = 0;
     p.len = 0;
     p.need = 0;
+}
+
+/* 初始化解析器，必须在启动 DMA 接收之前调用 */
+void parse_init(void)
+{
+    parse_reset();
+    read_total = 0;
 }
 
 /**
@@ -150,34 +161,44 @@ static parse_err_t parse_feed(uint8_t b)
     }
 }
 
-static parse_err_t parse_feed_ring(const uint8_t *ring, uint16_t ring_size,
-                                   uint16_t from, const uint16_t to)
-{
-    parse_err_t ret;
-    while (from != to) {
-        ret = parse_feed(ring[from]);
-        if (ret)
-            return ret;
-        if (++from == ring_size) {
-            from = 0;
-        }
-    }
-    return 0;
-}
-
-/* 要能正确解析tail一定不能回绕到等于idx的位置,最极限可以让tail=idx-1
- * 即不管idx当前在任何位置，主机一次只能传输RXBUF_SIZE - 1 大小字节 */
-extern uint8_t rxbuffer[RXBUF_SIZE];
 int process_all_available(void)
 {
-    uint16_t from = p.idx;
-    const uint16_t to = rx_dma_cur_pos();
-    configASSERT(from != to);
+    uint32_t tail;
+    uint32_t avail;
+    uint16_t pos;
     parse_err_t err = ERR_OK;
 
-    err = parse_feed_ring(rxbuffer, RXBUF_SIZE, from, to);
-    if (err) 
-	return err;
+    tail  = rx_dma_total();                    /* 写指针快照 */
+    avail = tail - read_total;                 /* 无符号减法，回绕自动成立 */
+    pos   = (uint16_t)(read_total % RXBUF_SIZE);
+
+    if (avail == 0U) {
+        return ERR_OK;
+    }
+
+    /* 落后超过一整圈：最旧的未读字节已经被 DMA 覆盖 */
+    if (avail > RXBUF_SIZE) {
+        read_total = tail;
+        parse_reset();
+        return ERR_OVERRUN;
+    }
+
+    while (read_total != tail) {
+        parse_err_t e = parse_feed(rxbuffer[pos]);
+
+        if (err == ERR_OK && e != ERR_OK) {
+            err = e;
+        }
+        if (++pos == RXBUF_SIZE) {
+            pos = 0;
+        }
+        read_total++;                          /* 每消费一个字节只在这里推进 */
+    }
+
+    /* 解析期间 DMA 又前进了 */
+    if (rx_dma_total() != tail) {
+        return (err == ERR_OK) ? ERR_RX_MOVED : err;
+    }
 
     /*
      * IDLE 已经把这次突发截断，状态机却还停在帧中间，
@@ -189,10 +210,6 @@ int process_all_available(void)
             err = ERR_PARTIAL;
         }
     }
-	
-    /* 简单判断 */
-    if (rx_dma_cur_pos() != to)
-	err = ERR_RX_MOVED;
 
     return err;
 }
