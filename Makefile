@@ -59,11 +59,11 @@ STARTUP  = $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/startup_gd32f3x0.S
 
 all: $(EXE).elf $(EXE).bin
 
-$(OBJDIR)/%.o: %.c Makefile
+$(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJDIR)/startup_gd32f3x0.o: $(STARTUP) Makefile
+$(OBJDIR)/startup_gd32f3x0.o: $(STARTUP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -84,7 +84,7 @@ release:
 
 # 体积对比
 compare: debug release
-	$(SIZE) build/release/$(TARGET).elf build/debug/$(TARGET)_dbg.elf
+	chmod u+x ./compare.sh && ./compare.sh
 
 FMT_SKIP := $(SRCDIR)/FreeRTOSConfig.h $(SRCDIR)/gd32f3x0_it.c $(SRCDIR)/gd32f3x0_it.h $(SRCDIR)/gd32f3x0_libopt.h
 FMT_FILES := $(filter-out $(FMT_SKIP),$(wildcard $(SRCDIR)/*.c $(SRCDIR)/*.h))

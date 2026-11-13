@@ -27,7 +27,7 @@ extern uint32_t rx_dma_total(void);
 
 extern uint8_t rxbuffer[RXBUF_SIZE];
 
-/* 状态机复位，不影响环的读指针 */
+/* 状态机复位 */
 static void parse_reset(void)
 {
     p.st  = S_HEAD;
@@ -110,6 +110,10 @@ static parse_err_t parse_feed(const uint8_t b)
         p.len  = b;
         p.need = (uint8_t)(b - FRAME_HDR_LEN);
         p.st   = S_CMD;
+#ifdef DEBUG
+	// len似乎不包含2字节的crc
+	configASSERT(p.len == (rx_dma_total() - (read_total - 2) - 2));
+#endif
         return ERR_OK;
 
     case S_CMD:
