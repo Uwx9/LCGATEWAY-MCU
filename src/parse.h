@@ -24,6 +24,8 @@
  * LEN 范围 5..254，整帧长度 LEN + 2 不超过 RXBUF_SIZE。
  */
 #define FRAME_HDR_LEN   5U
+
+/* RXBUF_SIZE 必须为2的n次方 */
 #define RXBUF_SIZE      256U
 
 /* 初始化解析器（必须在启动 DMA 接收之前调用） */
@@ -34,7 +36,7 @@ void parse_init(void);
  * 成功返回 ERR_OK，出错返回 error.h 中对应的错误码。
  * 返回值只报告本次调用遇到的第一类错误。
  */
-int process_all_available(void);
+parse_err_t process_all_available(void);
 
 /*
  * 完整且 CRC 正确的帧回调，frame 指向解析器内部缓冲，len 为整帧长度。

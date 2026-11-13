@@ -1,6 +1,7 @@
+#include "FreeRTOS.h"
 #include "parse.h"
-
-#include <stdint.h>
+#include "parse-error.h"
+#include "task.h"
 
 /* LEN 字段合法范围：至少要 5 字节头，整帧又不能超过接收缓冲 */
 #define FRAME_LEN_MIN   FRAME_HDR_LEN
@@ -79,7 +80,7 @@ static void parse_restart(uint8_t b)
 }
 
 /* 解析一个字节并更新解析器 */
-static parse_err_t parse_feed(uint8_t b)
+static parse_err_t parse_feed(const uint8_t b)
 {
     switch (p.st) {
     case S_HEAD:
@@ -161,7 +162,7 @@ static parse_err_t parse_feed(uint8_t b)
     }
 }
 
-int process_all_available(void)
+parse_err_t process_all_available(void)
 {
     uint32_t tail;
     uint32_t avail;
@@ -170,10 +171,10 @@ int process_all_available(void)
 
     tail  = rx_dma_total();                    /* 写指针快照 */
     avail = tail - read_total;                 /* 无符号减法，回绕自动成立 */
-    pos   = (uint16_t)(read_total % RXBUF_SIZE);
+    pos   = (uint16_t)(read_total % RXBUF_SIZE); /* RXBUF_SIZE 是2的n次方就不会在readtotal溢出时破坏pos */
 
     if (avail == 0U) {
-        return ERR_OK;
+        return err;
     }
 
     /* 落后超过一整圈：最旧的未读字节已经被 DMA 覆盖 */
@@ -183,21 +184,27 @@ int process_all_available(void)
         return ERR_OVERRUN;
     }
 
+    //TODO 这里解析一个字节
     while (read_total != tail) {
         parse_err_t e = parse_feed(rxbuffer[pos]);
 
         if (err == ERR_OK && e != ERR_OK) {
             err = e;
         }
-        if (++pos == RXBUF_SIZE) {
+        if (++pos == RXBUF_SIZE)
             pos = 0;
-        }
         read_total++;                          /* 每消费一个字节只在这里推进 */
     }
+    if (err != ERR_OK)
+        return err;
 
+#ifdef DEBUG
+    configASSERT(rx_dma_total() == tail);
+#endif
     /* 解析期间 DMA 又前进了 */
     if (rx_dma_total() != tail) {
-        return (err == ERR_OK) ? ERR_RX_MOVED : err;
+        // read_total = tail;
+        return ERR_RX_MOVED;
     }
 
     /*
@@ -206,12 +213,10 @@ int process_all_available(void)
      */
     if (p.st != S_HEAD) {
         parse_reset();
-        if (err == ERR_OK) {
-            err = ERR_PARTIAL;
-        }
+        return ERR_PARTIAL;
     }
 
-    return err;
+    return ERR_OK;
 }
 
 

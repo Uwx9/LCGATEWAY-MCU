@@ -2,6 +2,7 @@
 #include "gd32f3x0.h"
 #include "task.h"
 #include "parse.h"
+#include "parse-error.h"
 
 #define USART0_RDATA_ADDRESS      ((uint32_t)&USART_RDATA(USART0))
 #define USART0_TDATA_ADDRESS      ((uint32_t)&USART_TDATA(USART0))
@@ -23,16 +24,17 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
     }
 }
 
-/* 返回 DMA 下一个要写入的位置（0 .. RXBUF_SIZE-1） */
-uint16_t rx_dma_cur_pos(void)
-{
-    uint32_t cnt = dma_transfer_number_get(DMA_CH2);
-
-    /* CNT 为 0 或 RXBUF_SIZE 都表示刚好处在环起点 */
-    return (uint16_t)((cnt >= RXBUF_SIZE) ? 0U : (RXBUF_SIZE - cnt));
-}
+// /* 返回 DMA 下一个要写入的位置（0 .. RXBUF_SIZE-1） */
+// uint16_t rx_dma_cur_pos(void)
+// {
+//     uint32_t cnt = dma_transfer_number_get(DMA_CH2);
+//
+//     /* CNT 为 0 或 RXBUF_SIZE 都表示刚好处在环起点 */
+//     return (uint16_t)((cnt >= RXBUF_SIZE) ? 0U : (RXBUF_SIZE - cnt));
+// }
 
 /* 返回 DMA 已写入的绝对字节数；读数期间若发生套圈则重读 */
+/* 解析时使用，主机不应该传数据 */
 uint32_t rx_dma_total(void)
 {
     uint32_t lap_a;
@@ -44,11 +46,12 @@ uint32_t rx_dma_total(void)
         lap_a = rx_dma_wraps;
         cnt   = dma_transfer_number_get(DMA_CH2);
         lap_b = rx_dma_wraps;
-    } while (lap_a != lap_b);
+    } while (lap_a != lap_b && cnt != 0);
 
-    /* cnt 为 0 或等于 RXBUF_SIZE 都表示刚好走到一圈的起点 */
-    pos = (cnt >= RXBUF_SIZE) ? 0U : (RXBUF_SIZE - cnt);
-
+#ifdef DEBUG
+    configASSERT(cnt != 0);
+#endif
+    pos = (RXBUF_SIZE - cnt) % RXBUF_SIZE;
     return lap_a * RXBUF_SIZE + pos;
 }
 
@@ -62,7 +65,10 @@ static void rx_task(void *arg)
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        process_all_available();
+        parse_err_t ret = process_all_available();
+#ifdef DEBUG
+        configASSERT(ret == ERR_OK);
+#endif
     }
 }
 

@@ -1,19 +1,17 @@
+# target and toolchain
 TARGET   = fw
 PREFIX   = arm-none-eabi-
 CC       = $(PREFIX)gcc
 OBJCOPY  = $(PREFIX)objcopy
 SIZE     = $(PREFIX)size
 
-SRCDIR   = src
-OBJDIR   = obj
-FW       = Firmware
-RTOS	 = FreeRTOS
-
 # chip macro define
 DEVICE   = GD32F310
 
-LDSCRIPT = $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/Ld/gd32f310x8_flash.ld
-STARTUP  = $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/startup_gd32f3x0.S
+# dir
+SRCDIR   = src
+FW       = Firmware
+RTOS	 = FreeRTOS
 
 # all c files and .o .d files
 RTOS_SRCS = $(wildcard $(RTOS)/*.c)
@@ -21,44 +19,77 @@ CMSIS_SRCS = $(FW)/CMSIS/GD/GD32F3x0/Source/system_gd32f3x0.c \
 		  $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/newlib/syscalls.c
 STDP_SRCS  = $(wildcard $(FW)/GD32F3x0_standard_peripheral/Source/*.c)
 
-SRCS       = $(wildcard $(SRCDIR)/*.c) $(CMSIS_SRCS) $(STDP_SRCS) $(RTOS_SRCS)
-OBJS       = $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS)) $(OBJDIR)/startup_gd32f3x0.o
-DEPS       = $(patsubst %.c,$(OBJDIR)/%.d,$(SRCS))
+SRCS = $(wildcard $(SRCDIR)/*.c) $(CMSIS_SRCS) $(STDP_SRCS) $(RTOS_SRCS)
+OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS)) $(OBJDIR)/startup_gd32f3x0.o
+DEPS = $(patsubst %.c,$(OBJDIR)/%.d,$(SRCS))
 
+# ================= 构建配置：make 默认 debug =================
+BUILD_CONFIG := debug
+
+ifeq ($(BUILD_CONFIG),debug)
+	OBJDIR   := build/debug/obj
+	OUTDIR   := build/debug
+	EXE      := $(OUTDIR)/$(TARGET)_dbg
+	OPT      := $(if $(OPT),$(OPT),-Og) -g3 -gdwarf-4 -fno-omit-frame-pointer
+	CFG_DEFS := -DDEBUG=1 -DUSE_FULL_ASSERT
+else
+	OBJDIR   := build/release/obj
+	OUTDIR   := build/release
+	EXE      := $(OUTDIR)/$(TARGET)
+	OPT      := $(if $(OPT),$(OPT),-O2) -DNDEBUG
+	CFG_DEFS :=
+endif
+
+ARCH = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
 INC = -I$(SRCDIR) \
    -I$(FW)/CMSIS \
    -I$(FW)/CMSIS/GD/GD32F3x0/Include \
    -I$(FW)/GD32F3x0_standard_peripheral/Include \
    -I$(RTOS)/include
 
-CFLAGS = -std=gnu11 -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
-	   -D$(DEVICE) -Wall -O2 -ffunction-sections -fdata-sections $(INC)
-LDFLAGS = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
-          -T$(LDSCRIPT) -Wl,--gc-sections -Wl,-Map=$(TARGET).map --specs=nano.specs \
+CFLAGS  = -std=gnu11 $(ARCH) -D$(DEVICE) $(CFG_DEFS) $(OPT) \
+          -Wall -ffunction-sections -fdata-sections $(INC)
+LDFLAGS = $(ARCH) -T$(LDSCRIPT) -Wl,--gc-sections \
+          -Wl,-Map=$(EXE).map --specs=nano.specs \
           -Wl,--defsym=__stack_size=0x400
 
+LDSCRIPT = $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/Ld/gd32f310x8_flash.ld
+STARTUP  = $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/startup_gd32f3x0.S
 
-all: $(TARGET).elf $(TARGET).bin
 
-$(OBJDIR)/%.o: %.c
+all: $(EXE).elf $(EXE).bin
+
+$(OBJDIR)/%.o: %.c Makefile
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJDIR)/startup_gd32f3x0.o: $(STARTUP)
+$(OBJDIR)/startup_gd32f3x0.o: $(STARTUP) Makefile
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(TARGET).elf: $(OBJS)
+$(EXE).elf: $(OBJS)
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 
-$(TARGET).bin: $(TARGET).elf
+$(EXE).bin: $(EXE).elf
 	$(OBJCOPY) -O binary $< $@
 
 -include $(DEPS)
 
+debug:
+	$(MAKE) BUILD_CONFIG=debug
+
+release:
+	$(MAKE) BUILD_CONFIG=release
+
+# 体积对比
+compare: debug release
+	$(SIZE) build/release/$(TARGET).elf build/debug/$(TARGET)_dbg.elf
+
+FMT_SKIP := $(SRCDIR)/FreeRTOSConfig.h $(SRCDIR)/gd32f3x0_it.c $(SRCDIR)/gd32f3x0_it.h $(SRCDIR)/gd32f3x0_libopt.h
+FMT_FILES := $(filter-out $(FMT_SKIP),$(wildcard $(SRCDIR)/*.c $(SRCDIR)/*.h))
 format:
-	@astyle -n --style=linux src/main.c src/parse.c src/parse.h
+	@astyle -n --style=linux $(FMT_FILES)
 
 flash: flash-rs
 
@@ -73,9 +104,9 @@ flash-pyocd:
 
 
 clean:                                                                                                                           
-	@rm -rf $(OBJDIR) $(TARGET).elf $(TARGET).bin $(TARGET).map
+	@rm -rf build 
 
-debug:
+dbg:
 	#TODO 使用probe-rs + gdb调试
 
 echo:
@@ -83,4 +114,5 @@ echo:
 	@echo "OBJS: $(OBJS)"
 	@echo "DEPS: $(DEPS)"
 
-.PHONY: all format flash flash-isp flash-pyocd clean debug echo
+.PHONY: all debug release compare format flash flash-isp flash-pyocd clean dbg echo
+.DELETE_ON_ERROR:

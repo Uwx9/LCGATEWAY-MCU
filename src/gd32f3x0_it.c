@@ -90,7 +90,7 @@ void DMA_Channel1_2_IRQHandler(void)
     }
     if(RESET != dma_interrupt_flag_get(DMA_CH2, DMA_INT_FLAG_FTF)) {
         dma_interrupt_flag_clear(DMA_CH2, DMA_INT_FLAG_G);
-		rx_dma_wraps++;
+        rx_dma_wraps++;
     }
 }
 
@@ -100,11 +100,11 @@ void USART0_IRQHandler(void)
     /* 总线空闲产生idle中断 */
     if (RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_IDLE)) {
         usart_interrupt_flag_clear(USART0, USART_INT_FLAG_IDLE);
-		BaseType_t woken = pdFALSE;
+        BaseType_t woken = pdFALSE;
 
-		if (rx_task_handle != NULL) {
-			vTaskNotifyGiveFromISR(rx_task_handle, &woken);
-			portYIELD_FROM_ISR(woken);
-		}
+        if (rx_task_handle != NULL) {
+            vTaskNotifyGiveFromISR(rx_task_handle, &woken);
+            portYIELD_FROM_ISR(woken);
+        }
     }
 }
