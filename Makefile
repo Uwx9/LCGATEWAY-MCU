@@ -84,7 +84,7 @@ release:
 
 # 体积对比
 compare: debug release
-	chmod u+x ./compare.sh && ./compare.sh
+	chmod u+x ./compare.sh && bash ./compare.sh
 
 FMT_SKIP := $(SRCDIR)/FreeRTOSConfig.h $(SRCDIR)/gd32f3x0_it.c $(SRCDIR)/gd32f3x0_it.h $(SRCDIR)/gd32f3x0_libopt.h
 FMT_FILES := $(filter-out $(FMT_SKIP),$(wildcard $(SRCDIR)/*.c $(SRCDIR)/*.h))

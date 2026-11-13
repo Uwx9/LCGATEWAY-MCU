@@ -7,9 +7,6 @@
 #define USART0_RDATA_ADDRESS      ((uint32_t)&USART_RDATA(USART0))
 #define USART0_TDATA_ADDRESS      ((uint32_t)&USART_TDATA(USART0))
 
-/* RXBUF_SIZE 必须为2的n次方 */
-#define RXBUF_SIZE      256U
-
 uint8_t rxbuffer[RXBUF_SIZE];
 static uint8_t txbuffer[64];
 
@@ -69,6 +66,7 @@ static void rx_task(void *arg)
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         parse_err_t ret = process_all_available();
+		//如果失败做失败的处理
 #ifdef DEBUG
         configASSERT(ret == ERR_OK);
 #endif

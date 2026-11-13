@@ -12,6 +12,7 @@ typedef enum {
     ERR_PARTIAL   = -6,   /* 一次 idle 突发结束时帧还不完整 */
     ERR_RX_MOVED  = -7,   /* 解析过程中 DMA 尾指针又前进了 */
     ERR_OVERRUN   = -8,   /* 未读数据已经被 DMA 覆盖 */
+    ERR_options   = -9,   /* 执行动作失败 */
 } parse_err_t;
 
 #endif

@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include "parse-error.h"
 
+/* RXBUF_SIZE 必须为2的n次方 */
+#define RXBUF_SIZE      256U
+
 #define FRAME_HEAD      0x40
 #define FRAME_RW        0x06
 #define CMD_HOST        0xF1
@@ -39,6 +42,6 @@ parse_err_t process_all_available(void);
  * 完整且 CRC 正确的帧回调，frame 指向解析器内部缓冲，len 为整帧长度。
  * 默认实现为空，应用可在别处重新定义（弱符号）。
  */
-void on_frame(const uint8_t *frame, uint16_t len);
+parse_err_t on_frame(const uint8_t *frame, uint16_t len);
 
 #endif
