@@ -39,3 +39,4 @@ usart0
 dma ch1用于从 buffer 到usart tx发送命令
 dma ch2用于从usart rx 搬运接收命令到 buffer
 TODO 下载的时候如果是发送128字节就等待回应，不用改ch2, 解析帧时从buffer运到flash即可
+好像是主机发送一个数据包，mcu接收后返回一帧接受到数据的应答
