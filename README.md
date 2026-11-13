@@ -40,3 +40,7 @@ dma ch1用于从 buffer 到usart tx发送命令
 dma ch2用于从usart rx 搬运接收命令到 buffer
 TODO 下载的时候如果是发送128字节就等待回应，不用改ch2, 解析帧时从buffer运到flash即可
 好像是主机发送一个数据包，mcu接收后返回一帧接受到数据的应答
+
+关于dma_total和read_total
+它们都可以正确绕回，dma_total仅用于得到和read_total的差值
+read_total还用于得到在buffer中的pos,只要bufffer的size是2的n次方，pos总能正确绕回

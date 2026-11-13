@@ -175,6 +175,7 @@ parse_err_t process_all_available(void)
 
     tail  = rx_dma_total();                    /* 写指针快照 */
     avail = tail - read_total;                 /* 无符号减法，回绕自动成立 */
+    /* 准备消费的字节的位置 */
     pos   = (uint16_t)(read_total % RXBUF_SIZE); /* RXBUF_SIZE 是2的n次方就不会在readtotal溢出时破坏pos */
 
     if (avail == 0U) {
