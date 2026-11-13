@@ -3,9 +3,9 @@
 #include "parse-error.h"
 #include "task.h"
 
-/* LEN 字段合法范围：至少要 5 字节头，整帧又不能超过接收缓冲 */
-#define FRAME_LEN_MIN   FRAME_HDR_LEN
-#define FRAME_LEN_MAX   (RXBUF_SIZE - 2U)
+/* LEN 字段合法范围：至少要 5 字节头，整帧又不能FRAME */
+#define FRAME_LEN_MIN		FRAME_HDR_LEN
+#define FRAME_LEN_MAX		(FRAME_MAX_SIZE - 2)	 
 
 typedef enum {
     S_HEAD = 0, S_RW, S_LEN, S_CMD, S_SUB, S_DATA, S_CRC_L, S_CRC_H
@@ -16,7 +16,7 @@ static struct {
     uint16_t idx;
     uint8_t  len;      /* LEN 字段 */
     uint8_t  need;     /* 还差多少个数据字节 */
-    uint8_t  buf[FRAME_LEN_MAX + 2U];  /* 整帧：HEAD..DATA + CRC */
+    uint8_t  buf[FRAME_MAX_SIZE];  /* 整帧：HEAD..DATA + CRC */
 } p;
 
 /* 环的读指针：已经消费掉的绝对字节数，只在解析任务里修改 */
@@ -80,6 +80,7 @@ static void parse_restart(uint8_t b)
 }
 
 /* 解析一个字节并更新解析器 */
+/* 感觉不应该重试，这一帧有问题就丢掉 */
 static parse_err_t parse_feed(const uint8_t b)
 {
     switch (p.st) {
