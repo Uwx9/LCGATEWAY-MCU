@@ -23,7 +23,19 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
     }
 }
 
-/* 返回 DMA 已写入的绝对字节数，读数期间若发生套圈则重读 */
+/* 返回DMA下一个要写入的位置 */
+uint16_t rx_dma_cur_pos(void)
+{
+    uint16_t cnt = dma_transfer_number_get(DMA_CH2);
+#ifdef DEBUG
+    configASSERT(0 <= cnt <= RXBUF_SIZE);
+    configASSERT(cnt != 0);
+#endif
+    // 剩余要搬运字节cnt不应该为0
+    return (RXBUF_SIZE - cnt) % RXBUF_SIZE;
+}
+
+/* 返回 DMA 已写入的绝对字节数，和当前pos，读数期间若发生套圈则重读 */
 uint32_t rx_dma_total(void)
 {
     uint32_t lap_a;
@@ -50,8 +62,8 @@ static void rx_task(void *arg)
 {
     (void)arg;
 
-    /* 先复位解析器，再启动 DMA，保证两边从同一个起点开始 */
-    parse_init();
+    /* 先复位解析器，再启动 DMA */
+    parse_reset();
     dma_rx_start_cmdmode();
 
     for (;;) {
