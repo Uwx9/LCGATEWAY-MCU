@@ -1,3 +1,7 @@
+# version (major.minor, u8)
+VER_MAJOR = 0
+VER_MINOR = 1
+
 # target and toolchain
 TARGET   = fw
 PREFIX   = arm-none-eabi-
@@ -52,6 +56,10 @@ CFLAGS  = -std=gnu11 $(ARCH) -D$(DEVICE) $(CFG_DEFS) $(OPT) \
 LDFLAGS = $(ARCH) -T$(LDSCRIPT) -Wl,--gc-sections \
           -Wl,-Map=$(EXE).map --specs=nano.specs \
           -Wl,--defsym=__stack_size=0x400
+
+# version section use
+CFLAGS += -DFW_VER_MAJOR=$(VER_MAJOR) -DFW_VER_MINOR=$(VER_MINOR)
+CFLAGS += -DFW_VERSION_STR=\"version$(VER_MAJOR).$(VER_MINOR)\"
 
 # LDSCRIPT = $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/Ld/gd32f310x8_flash.ld
 LDSCRIPT = $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/Ld/gd32f330xB_flash.ld

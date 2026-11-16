@@ -49,6 +49,31 @@ SECTIONS
     __Vectors_Size = __Vectors_End - __gVectors;
   } >FLASH
 
+  /* 固件版本块：紧贴向量表，bin 偏移恒为 0x150 */
+  .fw_version_str :
+  {
+    . = ALIGN(4);
+    __fw_version_str_start = .;
+    KEEP(*(.fw_version_str))
+    . = ALIGN(4);
+    __fw_version_str_end = .;
+  } >FLASH	
+
+  /* 固件版本, 一字节major + 一字节minor */
+  .fw_version :
+  {
+    . = ALIGN(2);
+    __fw_version_num_start = .;
+    KEEP(*(.fw_version_num))
+    . = ALIGN(2);
+    __fw_version_num_end = .;
+  } >FLASH	
+
+  ASSERT(__fw_version_str_start - ORIGIN(FLASH) == 0x150,
+         "vector table size changed, update tooling offset 0x150")
+  ASSERT(__fw_version_num_start == __fw_version_str_start + 32,
+         "vernum not adjacent to version string")
+
   /* text section, such as program code */
   .text :
   {

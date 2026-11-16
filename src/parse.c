@@ -2,6 +2,7 @@
 #include "parse.h"
 #include "parse-error.h"
 #include "task.h"
+#include <stdint.h>
 
 /* LEN 字段合法范围：至少要 5 字节头，整帧又不能FRAME */
 #define FRAME_LEN_MIN		FRAME_HDR_LEN
@@ -17,7 +18,7 @@ static struct {
     uint8_t  len;      /* LEN 字段 */
     uint8_t  need;     /* 还差多少个数据字节 */
     uint8_t  done;     /* 本次突发已经交付一帧 */
-    uint8_t  buf[FRAME_MAX_SIZE];  /* 整帧：HEAD..DATA + CRC */
+    uint8_t  buf[RXBUF_SIZE];  /* 整帧：HEAD..DATA + CRC */
 } p;
 
 /* 环的读指针：已经消费掉的绝对字节数，只在解析任务里修改 */
@@ -26,6 +27,7 @@ static uint32_t read_total;
 /* 由 main.c 提供的 DMA 环写指针（绝对字节数） */
 extern uint32_t rx_dma_total(void);
 
+/* 虽然正常情况avail最大为FRAME_MAX_SIZE, 但这里允许主机传RXBUF_SIZE大小字节 */
 extern uint8_t rxbuffer[RXBUF_SIZE];
 
 /* 状态机复位 */
@@ -73,6 +75,9 @@ static uint16_t CrcValueCalc(const uint8_t *cpucData, uint16_t usLength)
 /* 解析一个字节并更新解析器；这一帧有问题就由调用方整帧丢弃 */
 static parse_err_t parse_feed(const uint8_t b)
 {
+#ifdef DEBUG
+	configASSERT(p.idx < FRAME_MAX_SIZE);
+#endif
     switch (p.st) {
     case S_HEAD:
         if (b != FRAME_HEAD) {
@@ -160,6 +165,7 @@ parse_err_t process_all_available(void)
     uint32_t tail;
     uint32_t avail;
     uint16_t pos;
+    parse_err_t e = ERR_OK;
 
     /* 每次突发都从干净状态开始，上一次遗留的半帧在这里丢弃 */
     parse_reset();
@@ -170,13 +176,13 @@ parse_err_t process_all_available(void)
     pos   = (uint16_t)(read_total % RXBUF_SIZE); /* RXBUF_SIZE 是2的n次方就不会在readtotal溢出时破坏pos */
 
     if (avail == 0U) {
-        return ERR_OK;
+	goto out; 
     }
 
     /* 落后超过一整圈：最旧的未读字节已经被 DMA 覆盖 */
     if (avail > RXBUF_SIZE) {
-        read_total = tail;
-        return ERR_OVERRUN;
+	    e = ERR_OVERRUN;
+	    goto out;
     }
 
     while (read_total != tail) {
@@ -184,18 +190,21 @@ parse_err_t process_all_available(void)
 
         /* 这一帧有问题：整帧丢弃，等主机重发 */
         if (e != ERR_OK) {
-            read_total = tail;
-            return e;
+            goto out;
         }
         if (++pos == RXBUF_SIZE)
             pos = 0;
-		/* 每消费一个字节只在这里推进 */
+	/* 每消费一个字节只在这里推进 */
         read_total++;
 
-        /* 一帧已经交付，本次突发后面的字节当噪声丢掉 */
+        /* 一帧成功交付，本次突发后面的字节当噪声丢掉 */
         if (p.done) {
-            read_total = tail;
-            return on_frame(p.buf, (uint16_t)(p.len + 2U));
+#ifdef DEBUG
+		configASSERT(p.len + 2 <= FRAME_MAX_SIZE);
+#endif
+            e = on_frame(p.buf, (uint16_t)(p.len + 2U));
+	    if (e != ERR_OK)
+		    goto out;
         }
     }
 
@@ -204,7 +213,8 @@ parse_err_t process_all_available(void)
 #endif
     /* 解析期间 DMA 又前进了 */
     if (rx_dma_total() != tail) {
-        return ERR_RX_MOVED;
+	    e = ERR_RX_MOVED;
+	    goto out;
     }
 
     /*
@@ -212,15 +222,36 @@ parse_err_t process_all_available(void)
      * 说明这一帧不完整，丢弃半帧；下次调用开头会 reset。
      */
     if (p.st != S_HEAD) {
-        return ERR_PARTIAL;
+	    e = ERR_PARTIAL;
+	    goto out;
     }
 
-    return ERR_OK;
+out:
+    read_total = rx_dma_total();
+    return e;
 }
 
 parse_err_t on_frame(const uint8_t *frame, uint16_t len)
 {
-    (void)frame;
-    (void)len;
-	return ERR_OK;
+	uint8_t sub_cmd = frame[4];
+	parse_err_t e = ERR_OK;
+#ifdef DEBUG
+	configASSERT(frame[3] == 0xf1);
+	configASSERT(0x01 <= sub_cmd && sub_cmd <= 0x08);
+#endif
+	// switch (sub_cmd) {
+	// case 0x01:
+	//
+	// case 0x02:
+	// case 0x03:
+	// case 0x04:
+	// case 0x05:
+	// case 0x06:
+	// case 0x06:
+	// case 0x07:
+	// case 0x08:
+	// }
+	//
+out:
+	return e;
 }
