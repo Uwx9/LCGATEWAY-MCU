@@ -60,7 +60,7 @@ SECTIONS
   } >FLASH	
 
   /* 固件版本, 一字节major + 一字节minor */
-  .fw_version :
+  .fw_version_num :
   {
     . = ALIGN(2);
     __fw_version_num_start = .;

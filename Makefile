@@ -10,7 +10,9 @@ OBJCOPY  = $(PREFIX)objcopy
 SIZE     = $(PREFIX)size
 
 # chip macro define
-DEVICE   = GD32F310
+# CHIP   = GD32F310
+CHIP   = GD32F330
+DEVICE = GD32F330CB
 
 # dir
 SRCDIR   = src
@@ -33,7 +35,7 @@ BUILD_CONFIG := debug
 ifeq ($(BUILD_CONFIG),debug)
 	OBJDIR   := build/debug/obj
 	OUTDIR   := build/debug
-	EXE      := $(OUTDIR)/$(TARGET)_dbg
+	EXE      := $(OUTDIR)/$(TARGET)_debug
 	OPT      := $(if $(OPT),$(OPT),-Og) -g3 -gdwarf-4 -fno-omit-frame-pointer
 	CFG_DEFS := -DDEBUG=1 -DUSE_FULL_ASSERT
 else
@@ -51,7 +53,7 @@ INC = -I$(SRCDIR) \
    -I$(FW)/GD32F3x0_standard_peripheral/Include \
    -I$(RTOS)/include
 
-CFLAGS  = -std=gnu11 $(ARCH) -D$(DEVICE) $(CFG_DEFS) $(OPT) \
+CFLAGS  = -std=gnu11 $(ARCH) -D$(CHIP) $(CFG_DEFS) $(OPT) \
           -Wall -ffunction-sections -fdata-sections $(INC)
 LDFLAGS = $(ARCH) -T$(LDSCRIPT) -Wl,--gc-sections \
           -Wl,-Map=$(EXE).map --specs=nano.specs \
@@ -76,7 +78,7 @@ $(OBJDIR)/startup_gd32f3x0.o: $(STARTUP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(EXE).elf: $(OBJS)
+$(EXE).elf: $(OBJS) $(LDSCRIPT)
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 
@@ -100,17 +102,52 @@ FMT_FILES := $(filter-out $(FMT_SKIP),$(wildcard $(SRCDIR)/*.c $(SRCDIR)/*.h))
 format:
 	@astyle -n --style=linux $(FMT_FILES)
 
-flash: flash-rs
+#default build files
+DEBUG_ELF_FILE = build/debug/$(TARGET)_debug.elf
+DEBUG_BIN_FILE = build/debug/$(TARGET)_debug.bin
+RELEASE_ELF_FILE = build/release/$(TARGET).elf
+RELEASE_BIN_FILE = build/release/$(TARGET).elf
+
+run: flash-rtt
+
+# download and run rtt
+flash-rtt: 
+	probe-rs run --chip $(DEVICE) $(DEBUG_ELF_FILE)
+
+# download
+flash: flash-rs-debug-elf
+
+# verify
+verify:
+	probe-rs verify --chip $(DEVICE) $(DEBUG_ELF_FILE)
+erase:
+	probe-rs erase  --chip $(DEVICE)
+
 
 #TODO 使用probe-rs 烧录
-flash-rs:
+# debug只多了断言, 烧录elf和bin差别不大
+flash-rs-release-elf:
+	probe-rs download --chip $(DEVICE) $(RELEASE_ELF_FILE)
+flash-rs-release-bin:
+	probe-rs download --chip $(DEVICE) --binary-format bin \
+	--base-address 0x08000000 $(RELEASE_BIN_FILE)
+flash-rs-debug-elf:
+	probe-rs download --chip $(DEVICE) $(DEBUG_ELF_FILE)
+flash-rs-debug-bin:
+	probe-rs download --chip $(DEVICE) --binary-format bin \
+	--base-address 0x08000000 $(DEBUG_BIN_FILE)
 
 #TODO 使用GD32 ISP CONSOLE 烧录
-flash-isp:
+flash-isp-release-elf:
+flash-isp-release-bin:
+flash-isp-debug-elf:
+flash-isp-debug-bin:
 
 #TODO 使用 pyocd  烧录
-flash-pyocd:
-
+flash-pyocd-release-elf:
+flash-pyocd-release-bin:
+flash-pyocd-debug-elf:
+flash-pyocd-debug-bin:
 
 clean:                                                                                                                           
 	@rm -rf build 
@@ -123,5 +160,5 @@ echo:
 	@echo "OBJS: $(OBJS)"
 	@echo "DEPS: $(DEPS)"
 
-.PHONY: all debug release compare format flash flash-isp flash-pyocd clean dbg echo
+.PHONY: all debug release compare format flash-rtt flash clean dbg echo
 .DELETE_ON_ERROR:

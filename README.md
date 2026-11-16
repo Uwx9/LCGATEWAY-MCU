@@ -1,4 +1,6 @@
-GD32F310C8T6为8Kram + 64Krom
+GD32F310C8T6为72MHZ 8K ram + 64K flash
+GD32F330CBT6为84MHZ 16K ram + 128K flash
+
 
 关于elf产物
 第一个可执行段就在8M处，代码直接在这里执行
@@ -44,3 +46,7 @@ TODO 下载的时候如果是发送128字节就等待回应，不用改ch2, 解�
 关于dma_total和read_total
 它们都可以正确绕回，dma_total仅用于得到和read_total的差值
 read_total还用于得到在buffer中的pos,只要bufffer的size是2的n次方，pos总能正确绕回
+
+关于版本
+二进制有一个fw_version_str节(固定偏移flash 0x150字节 是32字节字符串) 
+和一个fw_version_num节(偏移0x170(0x150+32)共两个字节,低地址字节是major,高地址字节是minor)
