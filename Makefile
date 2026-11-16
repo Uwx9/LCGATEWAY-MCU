@@ -18,15 +18,17 @@ DEVICE = GD32F330CB
 SRCDIR   = src
 FW       = Firmware
 RTOS	 = FreeRTOS
+RTT	 = RTT
 
 # all c files and .o .d files
 RTOS_SRCS = $(wildcard $(RTOS)/*.c)
 CMSIS_SRCS = $(FW)/CMSIS/GD/GD32F3x0/Source/system_gd32f3x0.c \
 		  $(FW)/CMSIS/GD/GD32F3x0/Source/GCC/newlib/syscalls.c
 STDP_SRCS  = $(wildcard $(FW)/GD32F3x0_standard_peripheral/Source/*.c)
+RTT_SRCS = $(wildcard $(RTT)/*.c)
 
-SRCS = $(wildcard $(SRCDIR)/*.c) $(CMSIS_SRCS) $(STDP_SRCS) $(RTOS_SRCS)
-OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS)) $(OBJDIR)/startup_gd32f3x0.o
+SRCS = $(wildcard $(SRCDIR)/*.c) $(CMSIS_SRCS) $(STDP_SRCS) $(RTOS_SRCS) $(RTT_SRCS)
+OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS)) $(OBJDIR)/startup_gd32f3x0.o $(OBJDIR)/SEGGER_RTT_ASM_ARMv7M.o
 DEPS = $(patsubst %.c,$(OBJDIR)/%.d,$(SRCS))
 
 # ================= 构建配置：make 默认 debug =================
@@ -42,16 +44,14 @@ else
 	OBJDIR   := build/release/obj
 	OUTDIR   := build/release
 	EXE      := $(OUTDIR)/$(TARGET)
-	OPT      := $(if $(OPT),$(OPT),-O1) -DNDEBUG
-	CFG_DEFS :=
+	OPT      := $(if $(OPT),$(OPT),-O2)
+	CFG_DEFS := -DNDEBUG
 endif
 
 ARCH = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
-INC = -I$(SRCDIR) \
-   -I$(FW)/CMSIS \
-   -I$(FW)/CMSIS/GD/GD32F3x0/Include \
-   -I$(FW)/GD32F3x0_standard_peripheral/Include \
-   -I$(RTOS)/include
+INC = -I$(SRCDIR) -I$(FW)/CMSIS -I$(FW)/CMSIS/GD/GD32F3x0/Include \
+   -I$(FW)/GD32F3x0_standard_peripheral/Include -I$(RTOS)/include \
+   -I$(RTT)/
 
 CFLAGS  = -std=gnu11 $(ARCH) -D$(CHIP) $(CFG_DEFS) $(OPT) \
           -Wall -ffunction-sections  -fno-strict-aliasing -fdata-sections $(INC)
@@ -75,6 +75,9 @@ $(OBJDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(OBJDIR)/startup_gd32f3x0.o: $(STARTUP)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJDIR)/SEGGER_RTT_ASM_ARMv7M.o: $(RTT)/SEGGER_RTT_ASM_ARMv7M.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -106,16 +109,21 @@ format:
 DEBUG_ELF_FILE = build/debug/$(TARGET)_debug.elf
 DEBUG_BIN_FILE = build/debug/$(TARGET)_debug.bin
 RELEASE_ELF_FILE = build/release/$(TARGET).elf
-RELEASE_BIN_FILE = build/release/$(TARGET).elf
+RELEASE_BIN_FILE = build/release/$(TARGET).bin
 
-run: flash-rtt
+run: run-rtt
+run-rtt: flash-rtt
+run-nortt: flash reset
 
-# download
+# download (chip not run, only download)
 flash: flash-rs-debug-elf
 
 # download and run rtt
-flash-rtt: flash
+flash-rtt: all
 	probe-rs run --chip $(DEVICE) $(DEBUG_ELF_FILE)
+
+reset:
+	probe-rs reset --chip GD32F330CB
 
 # verify
 verify:
@@ -160,5 +168,5 @@ echo:
 	@echo "OBJS: $(OBJS)"
 	@echo "DEPS: $(DEPS)"
 
-.PHONY: all debug release compare format flash-rtt flash clean dbg echo
+.PHONY: all debug release compare format run run-rtt run-nortt flash flash-rtt reset verify erase clean dbg echo
 .DELETE_ON_ERROR:

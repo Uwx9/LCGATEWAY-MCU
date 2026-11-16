@@ -193,21 +193,22 @@ TaskHandle_t rx_task_handle;
 int main(void)
 {
     /* 1. 优先级分组必须在所有 nvic_irq_enable 之前 */
-    // nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
-    //
-    // /* 2. 时钟、GPIO、USART 基础配置 */
-    // dma_usart_prepare();
-    //
-    // /* 3. 创建任务 */
-    // BaseType_t ret = xTaskCreate(rx_task, "rx", 256, NULL, 4, &rx_task_handle);
-    // configASSERT(ret == pdPASS);
+    nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
+
+    /* 2. 时钟、GPIO、USART 基础配置 */
+    dma_usart_prepare();
+
+    /* 3. 创建任务 */
+    BaseType_t ret = xTaskCreate(rx_task, "rx", 256, NULL, 4, &rx_task_handle);
+    configASSERT(ret == pdPASS);
 
     rcu_periph_clock_enable(RCU_GPIOC);
+    gpio_deinit(GPIOC);
     gpio_mode_set(GPIOC, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_13);
     gpio_output_options_set(GPIOC, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, GPIO_PIN_13);
-    gpio_bit_reset(GPIOC, GPIO_PIN_13);
+    gpio_bit_set(GPIOC, GPIO_PIN_13);
     /* 正常不返回 */
-    // vTaskStartScheduler();
+    vTaskStartScheduler();
 
     for (;;) {
     }
