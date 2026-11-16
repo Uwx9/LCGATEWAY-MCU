@@ -82,15 +82,20 @@ void DebugMon_Handler(void)
 
 extern __IO FlagStatus g_transfer_complete;
 extern volatile uint32_t rx_dma_wraps;
+extern volatile uint32_t dma_ch1_irq_count;
+extern volatile uint32_t dma_ch2_irq_count;
+extern volatile uint32_t usart0_idle_irq_count;
 void DMA_Channel1_2_IRQHandler(void)
 {
     if(RESET != dma_interrupt_flag_get(DMA_CH1, DMA_INT_FLAG_FTF)) {
         dma_interrupt_flag_clear(DMA_CH1, DMA_INT_FLAG_G);
+        dma_ch1_irq_count++;
         g_transfer_complete = SET;
     }
     if(RESET != dma_interrupt_flag_get(DMA_CH2, DMA_INT_FLAG_FTF)) {
         dma_interrupt_flag_clear(DMA_CH2, DMA_INT_FLAG_G);
         rx_dma_wraps++;
+        dma_ch2_irq_count++;
     }
 }
 
@@ -100,6 +105,7 @@ void USART0_IRQHandler(void)
     /* 总线空闲产生idle中断 */
     if (RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_IDLE)) {
         usart_interrupt_flag_clear(USART0, USART_INT_FLAG_IDLE);
+        usart0_idle_irq_count++;
         BaseType_t woken = pdFALSE;
 
         if (rx_task_handle != NULL) {

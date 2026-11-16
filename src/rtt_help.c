@@ -7,6 +7,7 @@
 #include "SEGGER_RTT.h"
 
 #include "rtt_help.h"
+#include "parse.h"
 
 #define REPORT_TASK_MAX   8U
 #define REPORT_IRQ_MAX    64U
@@ -52,6 +53,12 @@ extern char __ram_size[];
 
 /* newlib 的 sbrk 当前指针 */
 extern char *_sbrk_cur(void);
+
+/* main.c 中的 DMA/USART 统计 */
+extern volatile uint32_t rx_dma_wraps;
+extern volatile uint32_t dma_ch1_irq_count;
+extern volatile uint32_t dma_ch2_irq_count;
+extern volatile uint32_t usart0_idle_irq_count;
 
 typedef struct {
     uint8_t irq;
@@ -203,6 +210,19 @@ static uint32_t msp_free_bytes(void)
         p++;
     }
     return (uint32_t)((uintptr_t)p - (uintptr_t)_heap_end);
+}
+
+static void report_io(void)
+{
+    SEGGER_RTT_printf(0, ANSI_HEAD "=============== io ===============" ANSI_RESET "\r\n");
+    SEGGER_RTT_printf(0, "dma     total=%u read=%u wraps=%u\r\n",
+                      (unsigned)rx_dma_total(),
+                      (unsigned)parse_read_total(),
+                      (unsigned)rx_dma_wraps);
+    SEGGER_RTT_printf(0, "irq     ch1=%u ch2=%u usart_idle=%u\r\n",
+                      (unsigned)dma_ch1_irq_count,
+                      (unsigned)dma_ch2_irq_count,
+                      (unsigned)usart0_idle_irq_count);
 }
 
 static void report_memory(void)
@@ -370,6 +390,8 @@ void report_system_state(const char *tag)
     report_tasks();
     SEGGER_RTT_printf(0, "\r\n");
     report_irqs();
+    SEGGER_RTT_printf(0, "\r\n");
+    report_io();
     SEGGER_RTT_printf(0, "\r\n");
     report_memory();
 }

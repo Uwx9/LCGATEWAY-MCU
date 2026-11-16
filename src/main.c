@@ -7,14 +7,12 @@
 #include "SEGGER_RTT.h"
 
 #define USART0_RDATA_ADDRESS      ((uint32_t)&USART_RDATA(USART0))
-#define USART0_TDATA_ADDRESS      ((uint32_t)&USART_TDATA(USART0))
 
 uint8_t rxbuffer[RXBUF_SIZE];
-uint8_t txbuffer[64];
-
 volatile uint32_t rx_dma_wraps = 0;
-__IO FlagStatus g_transfer_complete = RESET;
-
+volatile uint32_t dma_ch1_irq_count = 0;
+volatile uint32_t dma_ch2_irq_count = 0;
+volatile uint32_t usart0_idle_irq_count = 0;
 static void dma_rx_start_cmdmode(void);
 
 void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
@@ -25,15 +23,6 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
     for (;;) {
     }
 }
-
-// /* 返回 DMA 下一个要写入的位置（0 .. RXBUF_SIZE-1） */
-// uint16_t rx_dma_cur_pos(void)
-// {
-//     uint32_t cnt = dma_transfer_number_get(DMA_CH2);
-//
-//     /* CNT 为 0 或 RXBUF_SIZE 都表示刚好处在环起点 */
-//     return (uint16_t)((cnt >= RXBUF_SIZE) ? 0U : (RXBUF_SIZE - cnt));
-// }
 
 /* 返回 DMA 已写入的绝对字节数；读数期间若发生套圈则重读 */
 /* 解析时使用，主机不应该传数据 */
@@ -50,9 +39,6 @@ uint32_t rx_dma_total(void)
         lap_b = rx_dma_wraps;
     } while (lap_a != lap_b && cnt != 0);
 
-#ifdef DEBUG
-    configASSERT(cnt != 0);
-#endif
     pos = (RXBUF_SIZE - cnt) % RXBUF_SIZE;
     return lap_a * RXBUF_SIZE + pos;
 }
@@ -68,10 +54,9 @@ static void rx_task(void *arg)
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         parse_err_t ret = process_all_available();
-		//如果失败做失败的处理
-#ifdef DEBUG
-        configASSERT(ret == ERR_OK);
-#endif
+        if (ret != ERR_OK) {
+            SEGGER_RTT_printf(0, "[iap] err=%d\r\n", (int)ret);
+        }
     }
 }
 
@@ -109,39 +94,6 @@ static void dma_rx_start_cmdmode(void)
 
     /* enable DMA channel2 */
     dma_channel_enable(DMA_CH2);
-}
-
-/* 设置dmaCH1将内存中的数据搬运到串口tx并产生中断 */
-static void dma_tx_start_cmdmode(void)
-{
-    dma_parameter_struct dma_init_struct;
-
-    /* initialize DMA channel1 */
-    dma_deinit(DMA_CH1);
-    dma_struct_para_init(&dma_init_struct);
-
-    dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
-    dma_init_struct.memory_addr  = (uint32_t)txbuffer;
-    dma_init_struct.memory_inc   = DMA_MEMORY_INCREASE_ENABLE;
-    dma_init_struct.memory_width = DMA_MEMORY_WIDTH_8BIT;
-    dma_init_struct.number       = sizeof(txbuffer);
-    dma_init_struct.periph_addr  = (uint32_t)USART0_TDATA_ADDRESS;
-    dma_init_struct.periph_inc   = DMA_PERIPH_INCREASE_DISABLE;
-    dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_8BIT;
-    dma_init_struct.priority     = DMA_PRIORITY_ULTRA_HIGH;
-    dma_init(DMA_CH1, &dma_init_struct);
-
-    /* configure DMA mode */
-    dma_circulation_disable(DMA_CH1);
-    dma_memory_to_memory_disable(DMA_CH1);
-
-    /* enable DMA channel1 transfer complete interrupt */
-    dma_interrupt_enable(DMA_CH1, DMA_INT_FTF);
-    /* 抢占优先级6, 子优先级0 */
-    nvic_irq_enable(DMA_Channel1_2_IRQn, 6, 0);
-
-    /* enable DMA channel1 */
-    dma_channel_enable(DMA_CH1);
 }
 
 static void com_usart_init(void)
