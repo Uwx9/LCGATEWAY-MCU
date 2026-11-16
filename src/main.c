@@ -10,7 +10,7 @@
 #define USART0_TDATA_ADDRESS      ((uint32_t)&USART_TDATA(USART0))
 
 uint8_t rxbuffer[RXBUF_SIZE];
-static uint8_t txbuffer[64];
+uint8_t txbuffer[64];
 
 volatile uint32_t rx_dma_wraps = 0;
 __IO FlagStatus g_transfer_complete = RESET;
@@ -64,8 +64,6 @@ static void rx_task(void *arg)
     /* 先复位解析器，再启动 DMA */
     parse_init();
     dma_rx_start_cmdmode();
-
-    report_system_state("rx-task-start");
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -209,13 +207,14 @@ int main(void)
     BaseType_t ret = xTaskCreate(rx_task, "rx", 256, NULL, 4, &rx_task_handle);
     configASSERT(ret == pdPASS);
 
+    /* 低优先级任务，轮询主机经 RTT 下发的命令 */
+    rtt_cmd_task_start();
+
     rcu_periph_clock_enable(RCU_GPIOC);
     gpio_deinit(GPIOC);
     gpio_mode_set(GPIOC, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_13);
     gpio_output_options_set(GPIOC, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, GPIO_PIN_13);
     gpio_bit_set(GPIOC, GPIO_PIN_13);
-
-    report_system_state("pre-scheduler");
 
     /* 正常不返回 */
     vTaskStartScheduler();
