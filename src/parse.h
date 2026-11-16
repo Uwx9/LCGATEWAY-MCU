@@ -2,8 +2,10 @@
 #define PARSE_H
 
 #include <stdint.h>
-
 #include "parse-error.h"
+
+/* RXBUF_SIZE 必须为2的n次方 */
+#define RXBUF_SIZE      256U
 
 #define FRAME_HEAD      0x40
 #define FRAME_RW        0x06
@@ -17,16 +19,14 @@
  *   [2]    LEN  从 HEAD 到最后一个数据字节的字节数，即 5 + 数据长度
  *   [3]    CMD
  *   [4]    SUB
- *   [5..]  DATA
+ *   [5..]  DATA 最大128字节
  *   [LEN]  CRC_L
  *   [LEN+1]CRC_H
  *
- * LEN 范围 5..254，整帧长度 LEN + 2 不超过 RXBUF_SIZE。
+ * LEN 范围 5..133，整帧长度 LEN + 2 不超过 135。
  */
 #define FRAME_HDR_LEN   5U
-
-/* RXBUF_SIZE 必须为2的n次方 */
-#define RXBUF_SIZE      256U
+#define FRAME_MAX_SIZE	135U
 
 /* 初始化解析器（必须在启动 DMA 接收之前调用） */
 void parse_init(void);
@@ -42,6 +42,6 @@ parse_err_t process_all_available(void);
  * 完整且 CRC 正确的帧回调，frame 指向解析器内部缓冲，len 为整帧长度。
  * 默认实现为空，应用可在别处重新定义（弱符号）。
  */
-void on_frame(const uint8_t *frame, uint16_t len);
+parse_err_t on_frame(const uint8_t *frame, uint16_t len);
 
 #endif

@@ -66,6 +66,7 @@ static void rx_task(void *arg)
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         parse_err_t ret = process_all_available();
+		//如果失败做失败的处理
 #ifdef DEBUG
         configASSERT(ret == ERR_OK);
 #endif
