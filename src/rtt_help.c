@@ -7,7 +7,6 @@
 #include "SEGGER_RTT.h"
 
 #include "rtt_help.h"
-#include "parse.h"
 
 #define REPORT_TASK_MAX   8U
 #define REPORT_IRQ_MAX    64U
@@ -59,6 +58,9 @@ extern volatile uint32_t rx_dma_wraps;
 extern volatile uint32_t dma_ch1_irq_count;
 extern volatile uint32_t dma_ch2_irq_count;
 extern volatile uint32_t usart0_idle_irq_count;
+extern volatile uint32_t dma_total_wraps;
+extern volatile uint32_t read_total_wraps;
+extern volatile uint32_t rx_dma_wraps_wraps;
 
 typedef struct {
     uint8_t irq;
@@ -215,10 +217,10 @@ static uint32_t msp_free_bytes(void)
 static void report_io(void)
 {
     SEGGER_RTT_printf(0, ANSI_HEAD "=============== io ===============" ANSI_RESET "\r\n");
-    SEGGER_RTT_printf(0, "dma     total=%u read=%u wraps=%u\r\n",
-                      (unsigned)rx_dma_total(),
-                      (unsigned)parse_read_total(),
-                      (unsigned)rx_dma_wraps);
+    SEGGER_RTT_printf(0, "wrap    dma=%u read=%u wraps=%u\r\n",
+                      (unsigned)dma_total_wraps,
+                      (unsigned)read_total_wraps,
+                      (unsigned)rx_dma_wraps_wraps);
     SEGGER_RTT_printf(0, "irq     ch1=%u ch2=%u usart_idle=%u\r\n",
                       (unsigned)dma_ch1_irq_count,
                       (unsigned)dma_ch2_irq_count,

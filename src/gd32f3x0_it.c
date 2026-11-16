@@ -85,6 +85,8 @@ extern volatile uint32_t rx_dma_wraps;
 extern volatile uint32_t dma_ch1_irq_count;
 extern volatile uint32_t dma_ch2_irq_count;
 extern volatile uint32_t usart0_idle_irq_count;
+extern volatile uint32_t dma_total_wraps;
+extern volatile uint32_t rx_dma_wraps_wraps;
 void DMA_Channel1_2_IRQHandler(void)
 {
     if(RESET != dma_interrupt_flag_get(DMA_CH1, DMA_INT_FLAG_FTF)) {
@@ -95,6 +97,13 @@ void DMA_Channel1_2_IRQHandler(void)
     if(RESET != dma_interrupt_flag_get(DMA_CH2, DMA_INT_FLAG_FTF)) {
         dma_interrupt_flag_clear(DMA_CH2, DMA_INT_FLAG_G);
         rx_dma_wraps++;
+        if(rx_dma_wraps == 0U) {
+            rx_dma_wraps_wraps++;
+        }
+        /* dma_total = rx_dma_wraps * RXBUF_SIZE + pos，随 rx_dma_wraps 每 2^24 圈回绕一次 */
+        if((rx_dma_wraps & 0x00FFFFFFU) == 0U) {
+            dma_total_wraps++;
+        }
         dma_ch2_irq_count++;
     }
 }

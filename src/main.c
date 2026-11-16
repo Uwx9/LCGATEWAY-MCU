@@ -13,6 +13,9 @@ volatile uint32_t rx_dma_wraps = 0;
 volatile uint32_t dma_ch1_irq_count = 0;
 volatile uint32_t dma_ch2_irq_count = 0;
 volatile uint32_t usart0_idle_irq_count = 0;
+volatile uint32_t dma_total_wraps = 0;      /* rx_dma_total() 的 32 位回绕次数 */
+volatile uint32_t read_total_wraps = 0;     /* read_total 的 32 位回绕次数 */
+volatile uint32_t rx_dma_wraps_wraps = 0;   /* rx_dma_wraps 的 32 位回绕次数 */
 static void dma_rx_start_cmdmode(void);
 
 void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
@@ -85,9 +88,9 @@ static void dma_rx_start_cmdmode(void)
 
     /* 搬满一圈产生中断，用于统计绝对写入量、检测 overrun */
     dma_interrupt_enable(DMA_CH2, DMA_INT_FTF);
-
     /* 靠空闲中断叫醒 CPU */
     usart_interrupt_enable(USART0, USART_INT_IDLE);
+
     /* 抢占优先级5, 子优先级0；不高于 configMAX_SYSCALL_INTERRUPT_PRIORITY */
     nvic_irq_enable(USART0_IRQn, 5, 0);
     nvic_irq_enable(DMA_Channel1_2_IRQn, 6, 0);
