@@ -30,8 +30,9 @@ Purpose : User configuration file for RTT.
 **********************************************************************
 */
 
-/* 上行缓冲：256 字节，必须 <= 2 的幂且 > 0 */
-#define BUFFER_SIZE_UP                       256
+/* 上行缓冲：512 字节，必须 <= 2 的幂且 > 0；
+ * 启动阶段两次系统快照总共约 400 字节，256 会在主机尚未连上时被截断 */
+#define BUFFER_SIZE_UP                       512
 
 /* 下行缓冲：不用 PC->MCU 传参也留着，最小 16
  * （SEGGER_RTT_ConfDefaults.h 里 _DoInit 无条件写 aDown[0]，

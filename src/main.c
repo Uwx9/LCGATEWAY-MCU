@@ -3,6 +3,8 @@
 #include "task.h"
 #include "parse.h"
 #include "parse-error.h"
+#include "rtt_help.h"
+#include "SEGGER_RTT.h"
 
 #define USART0_RDATA_ADDRESS      ((uint32_t)&USART_RDATA(USART0))
 #define USART0_TDATA_ADDRESS      ((uint32_t)&USART_TDATA(USART0))
@@ -62,6 +64,8 @@ static void rx_task(void *arg)
     /* 先复位解析器，再启动 DMA */
     parse_init();
     dma_rx_start_cmdmode();
+
+    report_system_state("rx-task-start");
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -192,6 +196,9 @@ static void dma_usart_prepare(void)
 TaskHandle_t rx_task_handle;
 int main(void)
 {
+    /* RTT 控制块只在这里初始化一次，后续 API 会跳过重复初始化 */
+    SEGGER_RTT_Init();
+
     /* 1. 优先级分组必须在所有 nvic_irq_enable 之前 */
     nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
 
@@ -207,6 +214,9 @@ int main(void)
     gpio_mode_set(GPIOC, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_13);
     gpio_output_options_set(GPIOC, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, GPIO_PIN_13);
     gpio_bit_set(GPIOC, GPIO_PIN_13);
+
+    report_system_state("pre-scheduler");
+
     /* 正常不返回 */
     vTaskStartScheduler();
 
