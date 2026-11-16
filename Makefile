@@ -42,7 +42,7 @@ else
 	OBJDIR   := build/release/obj
 	OUTDIR   := build/release
 	EXE      := $(OUTDIR)/$(TARGET)
-	OPT      := $(if $(OPT),$(OPT),-O2) -DNDEBUG
+	OPT      := $(if $(OPT),$(OPT),-O1) -DNDEBUG
 	CFG_DEFS :=
 endif
 
@@ -54,7 +54,7 @@ INC = -I$(SRCDIR) \
    -I$(RTOS)/include
 
 CFLAGS  = -std=gnu11 $(ARCH) -D$(CHIP) $(CFG_DEFS) $(OPT) \
-          -Wall -ffunction-sections -fdata-sections $(INC)
+          -Wall -ffunction-sections  -fno-strict-aliasing -fdata-sections $(INC)
 LDFLAGS = $(ARCH) -T$(LDSCRIPT) -Wl,--gc-sections \
           -Wl,-Map=$(EXE).map --specs=nano.specs \
           -Wl,--defsym=__stack_size=0x400
@@ -78,7 +78,7 @@ $(OBJDIR)/startup_gd32f3x0.o: $(STARTUP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(EXE).elf: $(OBJS) $(LDSCRIPT)
+$(EXE).elf: $(OBJS) $(LDSCRIPT) Makefile
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 
@@ -110,12 +110,12 @@ RELEASE_BIN_FILE = build/release/$(TARGET).elf
 
 run: flash-rtt
 
-# download and run rtt
-flash-rtt: 
-	probe-rs run --chip $(DEVICE) $(DEBUG_ELF_FILE)
-
 # download
 flash: flash-rs-debug-elf
+
+# download and run rtt
+flash-rtt: flash
+	probe-rs run --chip $(DEVICE) $(DEBUG_ELF_FILE)
 
 # verify
 verify:
@@ -126,14 +126,14 @@ erase:
 
 #TODO 使用probe-rs 烧录
 # debug只多了断言, 烧录elf和bin差别不大
-flash-rs-release-elf:
+flash-rs-release-elf: all
 	probe-rs download --chip $(DEVICE) $(RELEASE_ELF_FILE)
-flash-rs-release-bin:
+flash-rs-release-bin: all
 	probe-rs download --chip $(DEVICE) --binary-format bin \
 	--base-address 0x08000000 $(RELEASE_BIN_FILE)
-flash-rs-debug-elf:
+flash-rs-debug-elf: all
 	probe-rs download --chip $(DEVICE) $(DEBUG_ELF_FILE)
-flash-rs-debug-bin:
+flash-rs-debug-bin: all
 	probe-rs download --chip $(DEVICE) --binary-format bin \
 	--base-address 0x08000000 $(DEBUG_BIN_FILE)
 
