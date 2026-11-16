@@ -52,18 +52,25 @@ extern int errno;
 extern int __io_putchar(int ch) __attribute__((weak));
 extern int __io_getchar(void) __attribute__((weak));
 
+/* curbrk 需要文件作用域供 _sbrk_cur() 读取，初值来自链接脚本 _end */
+extern char _end[];
+extern char _heap_end[];
+static char *curbrk = _end;
+
 caddr_t _sbrk(int incr)
 {
-    extern char _end[];
-    extern char _heap_end[];
-    static char *curbrk = _end;
-
     if((curbrk + incr < _end) || (curbrk + incr > _heap_end)) {
         return NULL - 1;
     }
 
     curbrk += incr;
     return curbrk - incr;
+}
+
+/* 供状态报告读取当前 brk：newlib 堆剩余 = _heap_end - _sbrk_cur() */
+char *_sbrk_cur(void)
+{
+    return curbrk;
 }
 
 /* _gettimeofday primitive (Stub function) */

@@ -39,6 +39,12 @@ SECTIONS
   __stack_size = DEFINED(__stack_size) ? __stack_size : 2K;
   __heap_size = DEFINED(__heap_size) ? __heap_size : 1K;
 
+  /* 供固件报告存储空间使用 */
+  __flash_start = ORIGIN(FLASH);
+  __flash_size  = LENGTH(FLASH);
+  __ram_start   = ORIGIN(RAM);
+  __ram_size    = LENGTH(RAM);
+
   /* ISR vectors */
   .vectors :
   {
@@ -78,6 +84,7 @@ SECTIONS
   .text :
   {
     . = ALIGN(4);
+    __text_start = .;
     *(.text)
     *(.text*)
     *(.glue_7)
@@ -94,9 +101,11 @@ SECTIONS
   .rodata :
   {
     . = ALIGN(4);
+    __rodata_start = .;
     *(.rodata)
     *(.rodata*)
     . = ALIGN(4);
+    __rodata_end = .;
   } >FLASH
 
   /* exception process table */
