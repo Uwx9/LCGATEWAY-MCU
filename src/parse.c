@@ -24,9 +24,7 @@ static struct {
 
 /* 环的读指针：已经消费掉的绝对字节数，只在解析任务里修改 */
 static uint32_t read_total;
-
-/* 由 main.c 提供的 DMA 环写指针（绝对字节数） */
-extern uint32_t rx_dma_total(void);
+extern volatile uint32_t read_total_wraps;
 
 /* 虽然正常情况avail最大为FRAME_MAX_SIZE, 但这里允许主机传RXBUF_SIZE大小字节 */
 extern uint8_t rxbuffer[RXBUF_SIZE];
@@ -48,6 +46,7 @@ void parse_init(void)
     read_total = 0;
 }
 
+/* ps使用 */
 /**
  * @brief CRC16校验 *
  * @details 用于Modbus通信的CRC16校验 *
@@ -197,6 +196,9 @@ parse_err_t process_all_available(void)
             pos = 0;
 	/* 每消费一个字节只在这里推进 */
         read_total++;
+        if (read_total == 0U) {
+            read_total_wraps++;
+        }
 
         /* 一帧成功交付，本次突发后面的字节当噪声丢掉 */
         if (p.done) {
@@ -227,8 +229,16 @@ parse_err_t process_all_available(void)
 	    goto out;
     }
 
+/* label: 后面必须跟一条语句，而声明不是语句 */
 out:
-    read_total = rx_dma_total();
+    {
+        uint32_t new_total = rx_dma_total();
+
+        if (new_total < read_total) {
+            read_total_wraps++;
+        }
+        read_total = new_total;
+    }
     return e;
 }
 

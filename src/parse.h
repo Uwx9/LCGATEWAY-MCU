@@ -31,6 +31,9 @@
 /* 初始化解析器（必须在启动 DMA 接收之前调用） */
 void parse_init(void);
 
+/* DMA 环的写指针（绝对字节数） */
+uint32_t rx_dma_total(void);
+
 /*
  * 解析 DMA 环形缓冲中 [已读位置, DMA 当前写入位置) 的所有字节。
  * 成功返回 ERR_OK，出错返回 error.h 中对应的错误码。

@@ -216,7 +216,7 @@ static uint32_t msp_free_bytes(void)
 
 static void report_io(void)
 {
-    SEGGER_RTT_printf(0, ANSI_HEAD "=============== io ===============" ANSI_RESET "\r\n");
+    SEGGER_RTT_printf(0, ANSI_HEAD "=============== counter ===============" ANSI_RESET "\r\n");
     SEGGER_RTT_printf(0, "wrap    dma=%u read=%u wraps=%u\r\n",
                       (unsigned)dma_total_wraps,
                       (unsigned)read_total_wraps,
