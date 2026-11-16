@@ -13,6 +13,13 @@ typedef enum {
     ERR_RX_MOVED  = -7,   /* 解析过程中 DMA 尾指针又前进了 */
     ERR_OVERRUN   = -8,   /* 未读数据已经被 DMA 覆盖 */
     ERR_options   = -9,   /* 执行动作失败 */
+    ERR_IAP_STATE = -10,  /* IAP 状态不允许当前动作 */
+    ERR_IAP_PARAM = -11,  /* 命令数据字段非法 */
+    ERR_IAP_SIZE  = -12,  /* 文件大小超出剩余 flash */
+    ERR_IAP_SEQ   = -13,  /* 数据包号不连续 */
+    ERR_IAP_FLASH = -14,  /* flash 擦除或编程失败 */
+    ERR_IAP_CRC   = -15,  /* 总校验或包数不匹配 */
+    ERR_IAP_TX    = -16,  /* 应答 DMA 发送超时 */
 } parse_err_t;
 
 #endif

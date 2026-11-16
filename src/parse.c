@@ -1,6 +1,7 @@
 #include "FreeRTOS.h"
 #include "parse.h"
 #include "parse-error.h"
+#include "operats.h"
 #include "task.h"
 #include <stdint.h>
 
@@ -55,7 +56,7 @@ void parse_init(void)
  * @return uint16_t 返回值 *
  * @since V1.0.0
  */
-static uint16_t CrcValueCalc(const uint8_t *cpucData, uint16_t usLength)
+uint16_t CrcValueCalc(const uint8_t *cpucData, uint16_t usLength)
 {
     uint16_t usCrcValue = 0xFFFF;
     int iI = 0;
@@ -233,25 +234,41 @@ out:
 
 parse_err_t on_frame(const uint8_t *frame, uint16_t len)
 {
+	parse_err_t e = ERR_OK;	
 	uint8_t sub_cmd = frame[4];
-	parse_err_t e = ERR_OK;
 #ifdef DEBUG
-	configASSERT(frame[3] == 0xf1);
+	configASSERT(frame[3] == CMD_HOST);
 	configASSERT(0x01 <= sub_cmd && sub_cmd <= 0x08);
 #endif
-	// switch (sub_cmd) {
-	// case 0x01:
-	//
-	// case 0x02:
-	// case 0x03:
-	// case 0x04:
-	// case 0x05:
-	// case 0x06:
-	// case 0x06:
-	// case 0x07:
-	// case 0x08:
-	// }
-	//
+	switch (sub_cmd) {
+	case 0x01: /* 启动升级 */
+		e = ack_upgrade(frame, len);
+		goto out;
+	case 0x02: /* 发送版本号 */
+		e = ack_version(frame, len);
+		goto out;
+	case 0x03: /* 发送文件大小 */
+		e = ack_file_size(frame, len);
+		goto out;
+	case 0x04: /* 开始擦除 */
+		e = ack_eraseing(frame, len);
+		goto out;
+	case 0x05: /* 发送数据 */
+		e = ack_packet_id(frame, len);
+		goto out;
+	case 0x06: /* 总数据包数 */
+		e = ack_number_of_packets(frame, len);
+		goto out;
+	case 0x07: /* 总数据校验 */
+		e = ack_all_data_crc(frame, len);
+		goto out;
+	case 0x08: /* 完成重启 */
+		e = ready_rebot(frame, len);
+		goto out;
+	default:
+		goto out;
+	}
+
 out:
 	return e;
 }
