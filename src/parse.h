@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include "parse-error.h"
 
+/* test5 的固件测试命令（0x7E）；生产固件注释掉这一行 */
+#define TEST5
+
 #define FRAME_HEAD      0x40
 #define FRAME_RW        0x06
 #define CMD_HOST        0xF1
@@ -34,6 +37,9 @@ void parse_init(void);
 /* DMA 环的写指针（绝对字节数） */
 uint32_t rx_dma_total(void);
 
+/* 解析器已消费的绝对字节数 */
+uint32_t parse_read_total(void);
+
 /*
  * 解析 DMA 环形缓冲中 [已读位置, DMA 当前写入位置) 的所有字节。
  * 成功返回 ERR_OK，出错返回 error.h 中对应的错误码。
@@ -44,7 +50,13 @@ parse_err_t process_all_available(void);
 /* 完整且 CRC 正确的帧回调, frame 指向解析器内部缓冲, len 为整帧长度 */
 parse_err_t on_frame(const uint8_t *frame, uint16_t len);
 
-/* crc16 */
-uint16_t CrcValueCalc(const uint8_t *cpucData, uint16_t usLength);
+/* crc16（长度用 32 位，整包校验和单帧校验共用） */
+uint16_t CrcValueCalc(const uint8_t *cpucData, uint32_t len);
+
+#ifdef TEST5
+/* 测试钩子（0x7E 指令）：预置/回读回绕计数 */
+uint32_t parse_test_preset(uint32_t lap);
+void parse_test_counters(uint32_t out[5]);
+#endif
 
 #endif

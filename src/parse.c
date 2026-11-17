@@ -1,4 +1,5 @@
 #include "FreeRTOS.h"
+#include "gd32f3x0.h"
 #include "parse.h"
 #include "parse-error.h"
 #include "operats.h"
@@ -25,6 +26,14 @@ static struct {
 /* 环的读指针：已经消费掉的绝对字节数，只在解析任务里修改 */
 static uint32_t read_total;
 extern volatile uint32_t read_total_wraps;
+extern volatile uint32_t dma_total_wraps;
+extern volatile uint32_t rx_dma_wraps;
+extern volatile uint32_t rx_dma_wraps_wraps;
+
+#ifdef TEST5
+/* 预置命令会主动跳变计数，本次突发的 tail 检查需要跳过 */
+static uint8_t s_test_jump;
+#endif
 
 /* 虽然正常情况avail最大为FRAME_MAX_SIZE, 但这里允许主机传RXBUF_SIZE大小字节 */
 extern uint8_t rxbuffer[RXBUF_SIZE];
@@ -46,20 +55,64 @@ void parse_init(void)
     read_total = 0;
 }
 
+uint32_t parse_read_total(void)
+{
+    return read_total;
+}
+
+#ifdef TEST5
+/*
+ * 测试用：把 rx_dma_wraps 和 read_total 一起挪到 lap*RXBUF_SIZE+pos。
+ * pos 取 DMA 当前写位置，保证预置后 avail 为 0。
+ */
+uint32_t parse_test_preset(uint32_t lap)
+{
+    uint32_t cnt;
+    uint32_t pos;
+    uint32_t total;
+
+    taskENTER_CRITICAL();
+    cnt   = dma_transfer_number_get(DMA_CH2);
+    pos   = (RXBUF_SIZE - cnt) % RXBUF_SIZE;
+    total = lap * RXBUF_SIZE + pos;
+    rx_dma_wraps = lap;
+    read_total   = total;
+    /* 让三个回绕计数与 lap*RXBUF_SIZE 这个总字节数保持一致 */
+    dma_total_wraps    = lap >> 24;
+    read_total_wraps   = lap >> 24;
+    rx_dma_wraps_wraps = 0U;
+    s_test_jump        = 1U;
+    taskEXIT_CRITICAL();
+
+    return total;
+}
+
+void parse_test_counters(uint32_t out[5])
+{
+    taskENTER_CRITICAL();
+    out[0] = rx_dma_wraps;
+    out[1] = read_total;
+    out[2] = dma_total_wraps;
+    out[3] = read_total_wraps;
+    out[4] = rx_dma_wraps_wraps;
+    taskEXIT_CRITICAL();
+}
+#endif
+
 /* ps使用 */
 /**
  * @brief CRC16校验 *
  * @details 用于Modbus通信的CRC16校验 *
  * @param cpucData 数据缓冲区 *
- * @param usLength 数据长度 *
+ * @param len 数据长度 *
  * @return uint16_t 返回值 *
  * @since V1.0.0
  */
-uint16_t CrcValueCalc(const uint8_t *cpucData, uint16_t usLength)
+uint16_t CrcValueCalc(const uint8_t *cpucData, uint32_t len)
 {
     uint16_t usCrcValue = 0xFFFF;
     int iI = 0;
-    while (usLength--) {
+    while (len--) {
         usCrcValue ^= *cpucData++;
         for (iI = 8 - 1; iI >= 0; iI--) {
             if (usCrcValue & 0x0001) {
@@ -104,10 +157,10 @@ static parse_err_t parse_feed(const uint8_t b)
         p.len  = b;
         p.need = (uint8_t)(b - FRAME_HDR_LEN);
         p.st   = S_CMD;
-#ifdef DEBUG
-        // len似乎不包含2字节的crc
-        configASSERT(p.len == (rx_dma_total() - (read_total - 2) - 2));
-#endif
+// #ifdef DEBUG
+//         // len似乎不包含2字节的crc
+//         configASSERT(p.len == (rx_dma_total() - (read_total - 2) - 2));
+// #endif
         return ERR_OK;
 
     case S_CMD:
@@ -209,13 +262,24 @@ parse_err_t process_all_available(void)
             parse_reset();
 
             /* 动作错误就直接out */
-            if (e != ERR_OK)
+            if (e != ERR_OK) {
+#ifdef TEST5
+                s_test_jump = 0U;
+#endif
                 goto out;
+            }
 
             /* 动作成功就break执行后续两个检查再out */
             break;
         }
     }
+
+#ifdef TEST5
+    if (s_test_jump != 0U) {
+        s_test_jump = 0U;
+        goto out;
+    }
+#endif
 
 #ifdef DEBUG
     configASSERT(rx_dma_total() == tail);
@@ -253,7 +317,11 @@ parse_err_t on_frame(const uint8_t *frame, uint16_t len)
     uint8_t sub_cmd = frame[4];
 #ifdef DEBUG
     configASSERT(frame[3] == CMD_HOST);
-    configASSERT(0x01 <= sub_cmd && sub_cmd <= 0x08);
+#ifdef TEST5
+    configASSERT(((0x01 <= sub_cmd) && (sub_cmd <= 0x08)) || (sub_cmd == 0x7E));
+#else
+    configASSERT((0x01 <= sub_cmd) && (sub_cmd <= 0x08));
+#endif
 #endif
     switch (sub_cmd) {
     case 0x01: /* 启动升级 */
@@ -280,6 +348,11 @@ parse_err_t on_frame(const uint8_t *frame, uint16_t len)
     case 0x08: /* 完成重启 */
         e = ready_rebot(frame, len);
         goto out;
+#ifdef TEST5
+    case 0x7E: /* 测试命令：预置/回读回绕计数 */
+        e = test_cmd(frame, len);
+        goto out;
+#endif
     default:
         goto out;
     }

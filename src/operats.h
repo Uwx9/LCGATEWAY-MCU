@@ -15,4 +15,9 @@ parse_err_t ack_number_of_packets(const uint8_t *frame, uint16_t len);
 parse_err_t ack_all_data_crc(const uint8_t *frame, uint16_t len);
 parse_err_t ready_rebot(const uint8_t *frame, uint16_t len);
 
+#ifdef TEST5
+/* 0x7E 测试命令：预置/回读回绕计数 */
+parse_err_t test_cmd(const uint8_t *frame, uint16_t len);
+#endif
+
 #endif /* OPERATS_H */

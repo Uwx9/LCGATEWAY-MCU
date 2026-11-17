@@ -13,6 +13,7 @@
 #define USART0_TDATA_ADDRESS   ((uint32_t)&USART_TDATA(USART0))
 
 #define FLASH_PAGE_SIZE        1024U
+#define UPGRADE_SIZE           (64U * 1024U)  /* 固定用 flash 末尾 64KB 做升级区 */
 #define DATA_PACKET_MAX        128U
 #define ERASE_ACK_PAGES        8U      /* 擦除时按页数近似 500ms 发一次“擦除中” */
 #define TX_TIMEOUT_MS          100U
@@ -20,47 +21,49 @@
 /* DMA TX 完成中断置位 */
 __IO FlagStatus g_transfer_complete = RESET;
 
+/**
+ * @brief IAP升级上下文控制块
+ * @note 名字iap_ctx_t：
+ *       IAP = In-Application Programming，在应用编程（MCU不依赖Loader，APP运行时自己烧Flash升级）
+ *       ctx = context，上下文；
+ *       这个结构体保存一次升级会话的全部状态、统计、缓存信息，
+ *       全程只需要一个实例，贯穿【开始升级 → 收包 → 烧写 → 校验 → 结束】整个生命周期
+ */
 typedef struct {
-    uint8_t  active;
-    uint8_t  size_ok;
-    uint8_t  erased;
-    uint8_t  crc_ok;
-    uint8_t  error;
-    uint8_t  have_last;
-    uint8_t  word_len;
-    uint16_t new_version;
-    uint16_t declared_packets;
-    uint16_t recv_packets;
-    uint16_t last_packet_id;
-    uint32_t file_size;
-    uint32_t base_addr;
-    uint32_t write_addr;
-    uint32_t prog_bytes;
-    uint32_t word;
+    uint8_t  active;		// 升级会话是否激活：1=正在进行升级，0=空闲/无升级任务
+    uint8_t  size_ok;		// 固件长度校验标记：1=文件大小合法且不超过升级区(64K)；0=未校验/超限
+    uint8_t  erased;		// 升级分区擦除标记：1=目标Flash分区已经完成擦除；0=未擦除
+    uint8_t  crc_ok;		// CRC校验结果标记：1=整包固件CRC校验通过；0=校验失败/还没校验
+    uint8_t  flash_error;	// Flash 擦除或编程失败标记：1=本次升级中发生过 flash 操作错误；0=正常
+    uint8_t  have_last;		// 是否已有上一个有效包号：1=last_packet_id 有效；0=还没收到过数据包
+    uint8_t  word_len;		// 残余缓存内有效字节数：范围0~3，记录暂存的零散字节数量，用来拼成32bit字给flash_flush_word
+    uint8_t new_version_major;	// 待升级固件的版本号major，主机下发固件时携带
+    uint8_t new_version_minor;  // 待升级固件的版本号minor，主机下发固件时携带
+    uint16_t declared_packets;	// 主机声明的总包数：数据包发完后由 0x06 命令告诉 MCU 一共发了多少包
+    uint16_t recv_packets;	// MCU已经成功接收的数据包计数，用来和declared_packets对比判断是否收完
+    uint16_t last_packet_id;	// 上一个收到的包ID，用来做丢包检测、防重复包、顺序校验
+    uint32_t file_size;		// 固件总字节长度（主机下发）
+    uint32_t base_addr;		// 升级分区起始基地址
+    uint32_t write_addr;	// 当前正在写入Flash的目标地址，每写一个word自动递增4
+    uint32_t prog_bytes;	// 已经成功烧录到Flash的总字节数
+    uint32_t word;		// 残余字节缓存：攒够4字节由 flash_write 写入；收尾不足4字节由 flash_flush_word 补0xFF后写入
 } iap_ctx_t;
 
 static iap_ctx_t s_iap;
 static uint8_t s_tx[32];
 
-/* 当前固件在 flash 中占用的末尾，向上对齐到 1KB 页 */
+/* 升级镜像固定写在 flash 末尾的 64KB */
 static uint32_t upgrade_base_addr(void)
 {
-    uint32_t used_end = memmap_image_end();
-
-    return (used_end + (FLASH_PAGE_SIZE - 1U)) & ~(FLASH_PAGE_SIZE - 1U);
+    return memmap_flash_end() - UPGRADE_SIZE;
 }
 
-static uint32_t free_flash_size(void)
+static uint32_t free_upgrade_flash_size(void)
 {
     uint32_t base = upgrade_base_addr();
     uint32_t end  = memmap_flash_end();
 
     return (end > base) ? (end - base) : 0U;
-}
-
-static void fmc_clear_flags(void)
-{
-    fmc_flag_clear(FMC_FLAG_END | FMC_FLAG_PGERR | FMC_FLAG_WPERR);
 }
 
 /* 用 DMA CH1 把一帧搬到 USART0，等待 FTF 中断确认发送完成 */
@@ -128,9 +131,9 @@ static parse_err_t send_ack(uint8_t sub_cmd, const uint8_t *data, uint8_t data_l
     return tx_dma(s_tx, (uint16_t)(len + 2U));
 }
 
-static parse_err_t ack_erase_ok(void)
+static void fmc_clear_flags(void)
 {
-    return send_ack(0x05, NULL, 0U);
+    fmc_flag_clear(FMC_FLAG_END | FMC_FLAG_PGERR | FMC_FLAG_WPERR);
 }
 
 /* 把不足 4 字节的尾字补 0xFF 后写入 flash */
@@ -147,7 +150,7 @@ static void flash_flush_word(void)
         s_iap.word_len++;
     }
     if (fmc_word_program(s_iap.write_addr, word) != FMC_READY) {
-        s_iap.error = 1U;
+        s_iap.flash_error = 1U;
     }
     s_iap.write_addr += 4U;
     s_iap.word = 0U;
@@ -164,35 +167,13 @@ static void flash_write(const uint8_t *data, uint16_t len)
         s_iap.word_len++;
         if (s_iap.word_len == 4U) {
             if (fmc_word_program(s_iap.write_addr, s_iap.word) != FMC_READY) {
-                s_iap.error = 1U;
+                s_iap.flash_error = 1U;
             }
             s_iap.write_addr += 4U;
             s_iap.word = 0U;
             s_iap.word_len = 0U;
         }
     }
-}
-
-/* 整包数据 CRC16，长度可能超过 64KB，不能直接用 uint16 的 CrcValueCalc */
-static uint16_t crc16_flash(uint32_t addr, uint32_t len)
-{
-    const uint8_t *p = (const uint8_t *)addr;
-    uint16_t crc = 0xFFFFU;
-    uint32_t i;
-
-    for (i = 0U; i < len; i++) {
-        uint8_t bit;
-
-        crc ^= p[i];
-        for (bit = 0U; bit < 8U; bit++) {
-            if ((crc & 0x0001U) != 0U) {
-                crc = (uint16_t)((crc >> 1) ^ 0xA001U);
-            } else {
-                crc >>= 1;
-            }
-        }
-    }
-    return crc;
 }
 
 /* 0x01 启动升级：复位升级上下文，回 0xF2 0x01 */
@@ -217,18 +198,22 @@ parse_err_t ack_version(const uint8_t *frame, uint16_t len)
 
     (void)len;
 
-    if (data_len < 2U) {
+    if (data_len != 2U) {
         return ERR_IAP_PARAM;
     }
 
-    s_iap.new_version = (uint16_t)(((uint16_t)frame[5] << 8) | frame[6]);
+    s_iap.new_version_major = frame[5];
+    s_iap.new_version_minor = frame[6];
 
     out[0] = g_fw_version_num.major;
     out[1] = g_fw_version_num.minor;
     return send_ack(0x02, out, 2U);
 }
 
-/* 0x03 发送文件大小：检查剩余 flash 是否放得下，回 0xF2 0x03 */
+/* 
+ * 0x03 发送文件大小：检查剩余 flash 是否放得下，回 0xF2 0x03 
+ * 这里有错就不send_ack了直接返回错误
+ */
 parse_err_t ack_file_size(const uint8_t *frame, uint16_t len)
 {
     uint8_t data_len = (uint8_t)(frame[2] - FRAME_HDR_LEN);
@@ -241,7 +226,7 @@ parse_err_t ack_file_size(const uint8_t *frame, uint16_t len)
     if (s_iap.active == 0U) {
         return ERR_IAP_STATE;
     }
-    if (data_len < 4U) {
+    if (data_len != 4U) {
         return ERR_IAP_PARAM;
     }
 
@@ -249,28 +234,24 @@ parse_err_t ack_file_size(const uint8_t *frame, uint16_t len)
            ((uint32_t)frame[7] << 8)  | (uint32_t)frame[8];
 
     s_iap.file_size = size;
-    s_iap.size_ok = ((size != 0U) && (size <= free_flash_size())) ? 1U : 0U;
+    /* size != 0 && size <= 64K */
+    s_iap.size_ok = ((size != 0U) && (size <= free_upgrade_flash_size())) ? 1U : 0U;
 
+    /* 从高位开始发 */
     if (s_iap.size_ok != 0U) {
         out[0] = (uint8_t)(size >> 24);
         out[1] = (uint8_t)(size >> 16);
         out[2] = (uint8_t)(size >> 8);
         out[3] = (uint8_t)size;
-    } else {
-        out[0] = 0U;
-        out[1] = 0U;
-        out[2] = 0U;
-        out[3] = 0U;
+	e = send_ack(0x03, out, 4U);
+	if (e != ERR_OK)
+		return e;
     }
-
-    e = send_ack(0x03, out, 4U);
-    if (e != ERR_OK) {
-        return e;
-    }
+    /* size不对, 返回ERR_IAP_SIZE */
     return (s_iap.size_ok != 0U) ? ERR_OK : ERR_IAP_SIZE;
 }
 
-/* 0x04 开始擦除：擦除 [镜像末尾对齐 1KB, flash 末尾)，期间回“擦除中” */
+/* 0x04 开始擦除：擦除flash后64K，期间回“擦除中” */
 parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
 {
     uint32_t addr;
@@ -297,11 +278,12 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
         fmc_clear_flags();
         if (fmc_page_erase(addr) != FMC_READY) {
             fmc_lock();
-            s_iap.error = 1U;
+            s_iap.flash_error = 1U;
             return ERR_IAP_FLASH;
         }
         fmc_lock();
 
+	/* 擦除了8K后回应一次 */
         pages++;
         if (pages >= ERASE_ACK_PAGES) {
             pages = 0U;
@@ -312,6 +294,7 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
         }
     }
 
+	/* 擦除完成 */
     s_iap.erased     = 1U;
     s_iap.write_addr = s_iap.base_addr;
     s_iap.prog_bytes = 0U;
@@ -320,7 +303,7 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
     s_iap.word       = 0U;
     s_iap.word_len   = 0U;
 
-    return ack_erase_ok();
+    return send_ack(0x05, NULL, 0U);
 }
 
 /* 0x05 发送数据：包号(2 字节, 高在前) + 最多 128 字节数据 */
@@ -389,7 +372,7 @@ parse_err_t ack_packet_id(const uint8_t *frame, uint16_t len)
     if (e != ERR_OK) {
         return e;
     }
-    return (s_iap.error != 0U) ? ERR_IAP_FLASH : ERR_OK;
+    return (s_iap.flash_error != 0U) ? ERR_IAP_FLASH : ERR_OK;
 }
 
 /* 0x06 总数据包数：记录主机包数，回实际收到的包数 */
@@ -447,10 +430,10 @@ parse_err_t ack_all_data_crc(const uint8_t *frame, uint16_t len)
     flash_flush_word();
     fmc_lock();
 
-    calc = crc16_flash(s_iap.base_addr, s_iap.file_size);
+    calc = CrcValueCalc((const uint8_t *)s_iap.base_addr, s_iap.file_size);
     s_iap.crc_ok = ((calc == expected) &&
                     (s_iap.prog_bytes == s_iap.file_size) &&
-                    (s_iap.error == 0U)) ? 1U : 0U;
+                    (s_iap.flash_error == 0U)) ? 1U : 0U;
 
     out[0] = (uint8_t)(calc >> 8);
     out[1] = (uint8_t)(calc & 0xFFU);
@@ -458,7 +441,7 @@ parse_err_t ack_all_data_crc(const uint8_t *frame, uint16_t len)
     if (e != ERR_OK) {
         return e;
     }
-    if (s_iap.error != 0U) {
+    if (s_iap.flash_error != 0U) {
         return ERR_IAP_FLASH;
     }
     return (s_iap.crc_ok != 0U) ? ERR_OK : ERR_IAP_CRC;
@@ -478,7 +461,7 @@ parse_err_t ready_rebot(const uint8_t *frame, uint16_t len)
     if ((s_iap.file_size == 0U) || (s_iap.prog_bytes != s_iap.file_size)) {
         return ERR_IAP_PARAM;
     }
-    if (s_iap.error != 0U) {
+    if (s_iap.flash_error != 0U) {
         return ERR_IAP_FLASH;
     }
     if (s_iap.crc_ok == 0U) {
@@ -498,3 +481,59 @@ parse_err_t ready_rebot(const uint8_t *frame, uint16_t len)
     NVIC_SystemReset();
     return ERR_OK;
 }
+
+#ifdef TEST5
+#define TEST_OP_PRESET  0x00U
+#define TEST_OP_STATS   0x01U
+
+/*
+ * 0x7E 测试命令，data[0] 为操作码：
+ *   0x00: data[1..4] 为大端 lap，按 lap*BUF_SIZE 预置全部计数
+ *   0x01: 只回读
+ * 两种操作都应答 5 个大端 u32:
+ *   rx_dma_wraps, read_total, dma_total_wraps,
+ *   read_total_wraps, rx_dma_wraps_wraps
+ */
+parse_err_t test_cmd(const uint8_t *frame, uint16_t len)
+{
+    uint8_t data_len = (uint8_t)(frame[2] - FRAME_HDR_LEN);
+    uint8_t out[20];
+    uint32_t v[5];
+    uint32_t lap;
+    unsigned i;
+
+    (void)len;
+
+    if (data_len < 1U) {
+        return ERR_IAP_PARAM;
+    }
+
+    switch (frame[FRAME_HDR_LEN]) {
+    case TEST_OP_PRESET:
+        if (data_len < 5U) {
+            return ERR_IAP_PARAM;
+        }
+        lap = ((uint32_t)frame[FRAME_HDR_LEN + 1U] << 24) |
+              ((uint32_t)frame[FRAME_HDR_LEN + 2U] << 16) |
+              ((uint32_t)frame[FRAME_HDR_LEN + 3U] << 8) |
+              (uint32_t)frame[FRAME_HDR_LEN + 4U];
+        (void)parse_test_preset(lap);
+        break;
+
+    case TEST_OP_STATS:
+        break;
+
+    default:
+        return ERR_IAP_PARAM;
+    }
+
+    parse_test_counters(v);
+    for (i = 0U; i < 5U; i++) {
+        out[4U * i]      = (uint8_t)(v[i] >> 24);
+        out[4U * i + 1U] = (uint8_t)(v[i] >> 16);
+        out[4U * i + 2U] = (uint8_t)(v[i] >> 8);
+        out[4U * i + 3U] = (uint8_t)v[i];
+    }
+    return send_ack(0x7E, out, 20U);
+}
+#endif
