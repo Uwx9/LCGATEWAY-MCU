@@ -29,6 +29,7 @@
 MEMORY
 {
   FLASH    (rx): ORIGIN = 0x08000000, LENGTH = 128K
+  UPGRADE  (rx): ORIGIN = 0x0800F000, LENGTH = 8K
   RAM      (xrw): ORIGIN = 0x20000000, LENGTH = 16K
 }
 
@@ -128,14 +129,14 @@ SECTIONS
    *(.ARM.attributes)
   } >FLASH
 
-  .preinit_array :
+  .preinit_array (READONLY) :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP (*(.preinit_array*))
     PROVIDE_HIDDEN (__preinit_array_end = .);
   } >FLASH
 
-  .init_array :
+  .init_array (READONLY) :
   {
     PROVIDE_HIDDEN (__init_array_start = .);
     KEEP (*(SORT(.init_array.*)))
@@ -143,7 +144,7 @@ SECTIONS
     PROVIDE_HIDDEN (__init_array_end = .);
   } >FLASH
 
-  .fini_array :
+  .fini_array (READONLY) :
   {
     PROVIDE_HIDDEN (__fini_array_start = .);
     KEEP (*(.fini_array*))
@@ -165,9 +166,22 @@ SECTIONS
     _edata = .;
   } > RAM AT> FLASH
 
-  /* 当前固件必须整体落在升级区之前（升级区固定为 flash 末尾 64KB） */
-  ASSERT(_sidata + SIZEOF(.data) <= ORIGIN(FLASH) + LENGTH(FLASH) - 0x10000,
-         "firmware exceeds the 64KB upgrade region")
+  /* 当前固件必须整体落在前 60K；中间 8K 留给常驻升级器 */
+  ASSERT(_sidata + SIZEOF(.data) <= ORIGIN(UPGRADE),
+         "firmware exceeds the 60KB app region")
+
+  /* 常驻升级器：位于前后 60K 之外，交换时不会被擦 */
+  .upgrade :
+  {
+    __upgrade_start = .;
+    . = ALIGN(4);
+    KEEP(*(.upgrade))
+    . = ALIGN(4);
+    __upgrade_end = .;
+  } >UPGRADE
+
+  ASSERT(SIZEOF(.upgrade) <= LENGTH(UPGRADE),
+         "upgrade code exceeds 8KB")
 
   /* provide some necessary symbols for uninitialized data */
   . = ALIGN(4);

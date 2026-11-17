@@ -111,9 +111,8 @@ DEBUG_BIN_FILE = build/debug/$(TARGET)_debug.bin
 RELEASE_ELF_FILE = build/release/$(TARGET).elf
 RELEASE_BIN_FILE = build/release/$(TARGET).bin
 
-run: run-rtt
-run-rtt: flash-rtt
-run-nortt: flash reset
+rtt: flash-rtt
+run: flash reset
 
 # download (chip not run, only download)
 flash: flash-rs-debug-elf

@@ -9,6 +9,7 @@
 #include "memmap.h"
 #include "parse.h"
 #include "rtt_help.h"
+#include "upgrade.h"
 #include "version.h"
 
 #define REPORT_TASK_MAX   8U
@@ -21,6 +22,7 @@
 #define ANSI_BOLD     "\x1b[1m"
 #define ANSI_DIM      "\x1b[2m"
 #define ANSI_GREEN    "\x1b[32m"
+#define ANSI_BLUE     "\x1b[1;34m"
 #define ANSI_CYAN     "\x1b[36m"
 #define ANSI_YELLOW   "\x1b[33m"
 #define ANSI_MAGENTA  "\x1b[35m"
@@ -47,6 +49,8 @@ extern char __fini_array_start[];
 extern char __fini_array_end[];
 extern char __ram_start[];
 extern char __ram_size[];
+extern char __upgrade_start[];
+extern char __upgrade_end[];
 
 /* newlib 的 sbrk 当前指针 */
 extern char *_sbrk_cur(void);
@@ -231,8 +235,11 @@ static void report_io(void)
 
 static void report_memory(void)
 {
-    uint32_t flash_total = memmap_flash_size();
+    uint32_t app_total = UPGRADE_IMAGE_SIZE;
     uint32_t flash_used = memmap_image_size();
+    uint32_t upg_used = (uint32_t)(__upgrade_end - __upgrade_start);
+    uint32_t upg_base = (uint32_t)__upgrade_start;
+    uint32_t stage_base = memmap_flash_end() - UPGRADE_IMAGE_SIZE;
     uint32_t vectors_size = (uint32_t)__Vectors_End - memmap_flash_start();
     uint32_t version_size = (uint32_t)(__fw_version_num_end - __fw_version_str_start);
     uint32_t text_size = (uint32_t)(_etext - __text_start);
@@ -256,9 +263,10 @@ static void report_memory(void)
     SEGGER_RTT_printf(0, ANSI_HEAD "=============== storage ===============" ANSI_RESET "\r\n");
 
     SEGGER_RTT_printf(0, ANSI_BOLD "flash" ANSI_RESET
-                      "   used=%5u/%-6u  free=" ANSI_GREEN "%u" ANSI_RESET "\r\n",
-                      (unsigned)flash_used, (unsigned)flash_total,
-                      (unsigned)(flash_total - flash_used));
+                      "   " ANSI_BLUE "app" ANSI_RESET
+                      " used=%5u/%-6u  free=" ANSI_GREEN "%u" ANSI_RESET "\r\n",
+                      (unsigned)flash_used, (unsigned)app_total,
+                      (unsigned)(app_total - flash_used));
     SEGGER_RTT_printf(0, "        " ANSI_DIM "vectors" ANSI_RESET "=%u "
                       ANSI_DIM "version" ANSI_RESET "=%u "
                       ANSI_DIM "text" ANSI_RESET "=%u\r\n",
@@ -272,6 +280,15 @@ static void report_memory(void)
                       (unsigned)rodata_size, (unsigned)data_size,
                       (unsigned)exidx_size, (unsigned)initfini_size,
                       (unsigned)pad_size);
+
+    SEGGER_RTT_printf(0, "        " ANSI_BLUE "upgrade" ANSI_RESET
+                      " used=%5u/%-6u base=0x%08x free=" ANSI_GREEN "%u" ANSI_RESET "\r\n",
+                      (unsigned)upg_used, (unsigned)UPGRADE_CODE_SIZE,
+                      (unsigned)upg_base,
+                      (unsigned)(UPGRADE_CODE_SIZE - upg_used));
+    SEGGER_RTT_printf(0, "        " ANSI_BLUE "stage" ANSI_RESET
+                      "   size=%-6u base=0x%08x\r\n",
+                      (unsigned)UPGRADE_IMAGE_SIZE, (unsigned)stage_base);
 
     SEGGER_RTT_printf(0, ANSI_BOLD "ram" ANSI_RESET
                       "     used=%5u/%-6u  free=" ANSI_GREEN "%u" ANSI_RESET "\r\n",
