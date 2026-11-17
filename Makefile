@@ -114,6 +114,14 @@ RELEASE_BIN_FILE = build/release/$(TARGET).bin
 rtt: flash-rtt
 run: flash reset
 
+# 这里的 ELF 是让 probe-rs 从符号表里找到 _SEGGER_RTT 控制块的位置
+attach:
+	probe-rs attach --chip $(DEVICE) $(DEBUG_ELF_FILE)
+
+# 只看有哪些 RTT 通道，不常驻
+pipe: 
+	probe-rs attach --chip $(DEVICE) --list-rtt $(DEBUG_ELF_FILE)
+
 # download (chip not run, only download)
 flash: flash-rs-debug-elf
 

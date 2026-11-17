@@ -4,7 +4,7 @@
 CC     ?= cc
 CFLAGS  = -std=gnu11 -Wall -Wextra -O2
 
-BINS    = test1 test5
+BINS    = test1 test5 test6
 
 COMMON  = frame_io.c iap_flow.c
 HEADERS = frame_io.h iap_flow.h
@@ -15,6 +15,6 @@ all: $(BINS)
 	$(CC) $(CFLAGS) $< $(COMMON) -o $@
 
 clean:
-	rm -f test1 test2 test3 test4 test5
+	rm -f test1 test2 test3 test4 test5 test6
 
 .PHONY: all clean
