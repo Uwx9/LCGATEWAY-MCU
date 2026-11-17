@@ -165,6 +165,10 @@ SECTIONS
     _edata = .;
   } > RAM AT> FLASH
 
+  /* 当前固件必须整体落在升级区之前（升级区固定为 flash 末尾 64KB） */
+  ASSERT(_sidata + SIZEOF(.data) <= ORIGIN(FLASH) + LENGTH(FLASH) - 0x10000,
+         "firmware exceeds the 64KB upgrade region")
+
   /* provide some necessary symbols for uninitialized data */
   . = ALIGN(4);
   .bss :
