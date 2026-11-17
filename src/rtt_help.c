@@ -7,7 +7,9 @@
 #include "SEGGER_RTT.h"
 
 #include "memmap.h"
+#include "parse.h"
 #include "rtt_help.h"
+#include "version.h"
 
 #define REPORT_TASK_MAX   8U
 #define REPORT_IRQ_MAX    64U
@@ -213,11 +215,15 @@ static uint32_t msp_free_bytes(void)
 static void report_io(void)
 {
     SEGGER_RTT_printf(0, ANSI_HEAD "=============== counter ===============" ANSI_RESET "\r\n");
-    SEGGER_RTT_printf(0, "wrap    dma=%u read=%u wraps=%u\r\n",
+    SEGGER_RTT_printf(0, "counter            dma_total=%u read_total=%u dma_wrap_register=%u\r\n",
+                      (unsigned)rx_dma_total(),
+                      (unsigned)parse_read_total(),
+                      (unsigned)rx_dma_wraps);
+    SEGGER_RTT_printf(0, "counter_wrap	 dma_total_wrap=%u read_total_wrap=%u dma_wrap_register_wrap=%u\r\n",
                       (unsigned)dma_total_wraps,
                       (unsigned)read_total_wraps,
                       (unsigned)rx_dma_wraps_wraps);
-    SEGGER_RTT_printf(0, "irq     ch1=%u ch2=%u usart_idle=%u\r\n",
+    SEGGER_RTT_printf(0, "irq                ch1=%u ch2=%u usart_idle=%u\r\n",
                       (unsigned)dma_ch1_irq_count,
                       (unsigned)dma_ch2_irq_count,
                       (unsigned)usart0_idle_irq_count);
@@ -377,6 +383,15 @@ static void report_irqs(void)
     }
 }
 
+static void report_version(void)
+{
+    SEGGER_RTT_printf(0, ANSI_HEAD "=============== version ===============" ANSI_RESET "\r\n");
+    SEGGER_RTT_printf(0, "name: fw\r\n");
+    SEGGER_RTT_printf(0, "version major: %u\r\n", (unsigned)g_fw_version_num.major);
+    SEGGER_RTT_printf(0, "version minor: %u\r\n", (unsigned)g_fw_version_num.minor);
+    SEGGER_RTT_printf(0, "version string: %s\r\n", g_fw_version_str);
+}
+
 void report_system_state(const char *tag)
 {
     if (s_msp_paint_top == 0U) {
@@ -384,6 +399,8 @@ void report_system_state(const char *tag)
     }
 
     SEGGER_RTT_printf(0, "\r\n %s\r\n", (tag != NULL) ? tag : "report");
+    report_version();
+    SEGGER_RTT_printf(0, "\r\n");
     report_tasks();
     SEGGER_RTT_printf(0, "\r\n");
     report_irqs();
