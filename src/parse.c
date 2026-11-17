@@ -7,7 +7,7 @@
 
 /* LEN 字段合法范围：至少要 5 字节头，整帧又不能FRAME */
 #define FRAME_LEN_MIN		FRAME_HDR_LEN
-#define FRAME_LEN_MAX		(FRAME_MAX_SIZE - 2)	 
+#define FRAME_LEN_MAX		(FRAME_MAX_SIZE - 2)
 
 typedef enum {
     S_HEAD = 0, S_RW, S_LEN, S_CMD, S_SUB, S_DATA, S_CRC_L, S_CRC_H
@@ -76,7 +76,7 @@ uint16_t CrcValueCalc(const uint8_t *cpucData, uint16_t usLength)
 static parse_err_t parse_feed(const uint8_t b)
 {
 #ifdef DEBUG
-	configASSERT(p.idx < FRAME_MAX_SIZE);
+    configASSERT(p.idx < FRAME_MAX_SIZE);
 #endif
     switch (p.st) {
     case S_HEAD:
@@ -105,8 +105,8 @@ static parse_err_t parse_feed(const uint8_t b)
         p.need = (uint8_t)(b - FRAME_HDR_LEN);
         p.st   = S_CMD;
 #ifdef DEBUG
-	// len似乎不包含2字节的crc
-	configASSERT(p.len == (rx_dma_total() - (read_total - 2) - 2));
+        // len似乎不包含2字节的crc
+        configASSERT(p.len == (rx_dma_total() - (read_total - 2) - 2));
 #endif
         return ERR_OK;
 
@@ -176,13 +176,13 @@ parse_err_t process_all_available(void)
     pos   = (uint16_t)(read_total % RXBUF_SIZE); /* RXBUF_SIZE 是2的n次方就不会在readtotal溢出时破坏pos */
 
     if (avail == 0U) {
-	goto out; 
+        goto out;
     }
 
     /* 落后超过一整圈：最旧的未读字节已经被 DMA 覆盖 */
     if (avail > RXBUF_SIZE) {
-	    e = ERR_OVERRUN;
-	    goto out;
+        e = ERR_OVERRUN;
+        goto out;
     }
 
     while (read_total != tail) {
@@ -194,7 +194,7 @@ parse_err_t process_all_available(void)
         }
         if (++pos == RXBUF_SIZE)
             pos = 0;
-	/* 每消费一个字节只在这里推进 */
+        /* 每消费一个字节只在这里推进 */
         read_total++;
         if (read_total == 0U) {
             read_total_wraps++;
@@ -203,11 +203,17 @@ parse_err_t process_all_available(void)
         /* 一帧成功交付，本次突发后面的字节当噪声丢掉 */
         if (p.done) {
 #ifdef DEBUG
-		configASSERT(p.len + 2 <= FRAME_MAX_SIZE);
+            configASSERT(p.len + 2 <= FRAME_MAX_SIZE);
 #endif
             e = on_frame(p.buf, (uint16_t)(p.len + 2U));
-	    if (e != ERR_OK)
-		    goto out;
+            parse_reset();
+
+            /* 动作错误就直接out */
+            if (e != ERR_OK)
+                goto out;
+
+            /* 动作成功就break执行后续两个检查再out */
+            break;
         }
     }
 
@@ -216,8 +222,8 @@ parse_err_t process_all_available(void)
 #endif
     /* 解析期间 DMA 又前进了 */
     if (rx_dma_total() != tail) {
-	    e = ERR_RX_MOVED;
-	    goto out;
+        e = ERR_RX_MOVED;
+        goto out;
     }
 
     /*
@@ -225,13 +231,12 @@ parse_err_t process_all_available(void)
      * 说明这一帧不完整，丢弃半帧；下次调用开头会 reset。
      */
     if (p.st != S_HEAD) {
-	    e = ERR_PARTIAL;
-	    goto out;
+        e = ERR_PARTIAL;
+        goto out;
     }
 
-/* label: 后面必须跟一条语句，而声明不是语句 */
-out:
-    {
+    /* label: 后面必须跟一条语句，而声明不是语句 */
+out: {
         uint32_t new_total = rx_dma_total();
 
         if (new_total < read_total) {
@@ -244,41 +249,41 @@ out:
 
 parse_err_t on_frame(const uint8_t *frame, uint16_t len)
 {
-	parse_err_t e = ERR_OK;	
-	uint8_t sub_cmd = frame[4];
+    parse_err_t e = ERR_OK;
+    uint8_t sub_cmd = frame[4];
 #ifdef DEBUG
-	configASSERT(frame[3] == CMD_HOST);
-	configASSERT(0x01 <= sub_cmd && sub_cmd <= 0x08);
+    configASSERT(frame[3] == CMD_HOST);
+    configASSERT(0x01 <= sub_cmd && sub_cmd <= 0x08);
 #endif
-	switch (sub_cmd) {
-	case 0x01: /* 启动升级 */
-		e = ack_upgrade(frame, len);
-		goto out;
-	case 0x02: /* 发送版本号 */
-		e = ack_version(frame, len);
-		goto out;
-	case 0x03: /* 发送文件大小 */
-		e = ack_file_size(frame, len);
-		goto out;
-	case 0x04: /* 开始擦除 */
-		e = ack_eraseing(frame, len);
-		goto out;
-	case 0x05: /* 发送数据 */
-		e = ack_packet_id(frame, len);
-		goto out;
-	case 0x06: /* 总数据包数 */
-		e = ack_number_of_packets(frame, len);
-		goto out;
-	case 0x07: /* 总数据校验 */
-		e = ack_all_data_crc(frame, len);
-		goto out;
-	case 0x08: /* 完成重启 */
-		e = ready_rebot(frame, len);
-		goto out;
-	default:
-		goto out;
-	}
+    switch (sub_cmd) {
+    case 0x01: /* 启动升级 */
+        e = ack_upgrade(frame, len);
+        goto out;
+    case 0x02: /* 发送版本号 */
+        e = ack_version(frame, len);
+        goto out;
+    case 0x03: /* 发送文件大小 */
+        e = ack_file_size(frame, len);
+        goto out;
+    case 0x04: /* 开始擦除 */
+        e = ack_eraseing(frame, len);
+        goto out;
+    case 0x05: /* 发送数据 */
+        e = ack_packet_id(frame, len);
+        goto out;
+    case 0x06: /* 总数据包数 */
+        e = ack_number_of_packets(frame, len);
+        goto out;
+    case 0x07: /* 总数据校验 */
+        e = ack_all_data_crc(frame, len);
+        goto out;
+    case 0x08: /* 完成重启 */
+        e = ready_rebot(frame, len);
+        goto out;
+    default:
+        goto out;
+    }
 
 out:
-	return e;
+    return e;
 }

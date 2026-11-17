@@ -167,6 +167,7 @@ echo:
 	@echo "SRCS: $(SRCS)"
 	@echo "OBJS: $(OBJS)"
 	@echo "DEPS: $(DEPS)"
+	@echo "FORMAT: $(FMT_FILES)"
 
 .PHONY: all debug release compare format run run-rtt run-nortt flash flash-rtt reset verify erase clean dbg echo
 .DELETE_ON_ERROR:

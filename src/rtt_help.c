@@ -6,6 +6,7 @@
 #include "gd32f3x0.h"
 #include "SEGGER_RTT.h"
 
+#include "memmap.h"
 #include "rtt_help.h"
 
 #define REPORT_TASK_MAX   8U
@@ -24,9 +25,6 @@
 #define ANSI_RED      "\x1b[1;31m"
 
 /* 链接脚本导出的内存布局符号 */
-extern char _sidata[];
-extern char _sdata[];
-extern char _edata[];
 extern char _sbss[];
 extern char _ebss[];
 extern char _end[];
@@ -45,8 +43,6 @@ extern char __init_array_start[];
 extern char __init_array_end[];
 extern char __fini_array_start[];
 extern char __fini_array_end[];
-extern char __flash_start[];
-extern char __flash_size[];
 extern char __ram_start[];
 extern char __ram_size[];
 
@@ -229,14 +225,13 @@ static void report_io(void)
 
 static void report_memory(void)
 {
-    uint32_t flash_total = (uint32_t)__flash_size;
-    uint32_t flash_used = (uint32_t)(_sidata - __flash_start) +
-                          (uint32_t)(_edata - _sdata);
-    uint32_t vectors_size = (uint32_t)(__Vectors_End - __flash_start);
+    uint32_t flash_total = memmap_flash_size();
+    uint32_t flash_used = memmap_image_size();
+    uint32_t vectors_size = (uint32_t)__Vectors_End - memmap_flash_start();
     uint32_t version_size = (uint32_t)(__fw_version_num_end - __fw_version_str_start);
     uint32_t text_size = (uint32_t)(_etext - __text_start);
     uint32_t rodata_size = (uint32_t)(__rodata_end - __rodata_start);
-    uint32_t data_size = (uint32_t)(_edata - _sdata);
+    uint32_t data_size = memmap_data_size();
     uint32_t exidx_size = (uint32_t)(__exidx_end - __exidx_start);
     uint32_t initfini_size = (uint32_t)((__init_array_end - __init_array_start) +
                                         (__fini_array_end - __fini_array_start));

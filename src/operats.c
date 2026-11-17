@@ -5,6 +5,7 @@
 
 #include "gd32f3x0.h"
 
+#include "memmap.h"
 #include "operats.h"
 #include "parse.h"
 #include "version.h"
@@ -15,13 +16,6 @@
 #define DATA_PACKET_MAX        128U
 #define ERASE_ACK_PAGES        8U      /* 擦除时按页数近似 500ms 发一次“擦除中” */
 #define TX_TIMEOUT_MS          100U
-
-/* 链接脚本导出的镜像信息 */
-extern char __flash_start[];
-extern char __flash_size[];
-extern char _sidata[];
-extern char _sdata[];
-extern char _edata[];
 
 /* DMA TX 完成中断置位 */
 __IO FlagStatus g_transfer_complete = RESET;
@@ -48,15 +42,10 @@ typedef struct {
 static iap_ctx_t s_iap;
 static uint8_t s_tx[32];
 
-static uint32_t flash_end_addr(void)
-{
-    return (uint32_t)__flash_start + (uint32_t)__flash_size;
-}
-
 /* 当前固件在 flash 中占用的末尾，向上对齐到 1KB 页 */
 static uint32_t upgrade_base_addr(void)
 {
-    uint32_t used_end = (uint32_t)_sidata + (uint32_t)(_edata - _sdata);
+    uint32_t used_end = memmap_image_end();
 
     return (used_end + (FLASH_PAGE_SIZE - 1U)) & ~(FLASH_PAGE_SIZE - 1U);
 }
@@ -64,7 +53,7 @@ static uint32_t upgrade_base_addr(void)
 static uint32_t free_flash_size(void)
 {
     uint32_t base = upgrade_base_addr();
-    uint32_t end  = flash_end_addr();
+    uint32_t end  = memmap_flash_end();
 
     return (end > base) ? (end - base) : 0U;
 }
@@ -303,7 +292,7 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
         return e;
     }
 
-    for (addr = s_iap.base_addr; addr < flash_end_addr(); addr += FLASH_PAGE_SIZE) {
+    for (addr = s_iap.base_addr; addr < memmap_flash_end(); addr += FLASH_PAGE_SIZE) {
         fmc_unlock();
         fmc_clear_flags();
         if (fmc_page_erase(addr) != FMC_READY) {
