@@ -8,12 +8,13 @@
 #include "memmap.h"
 #include "operats.h"
 #include "parse.h"
+#include "upgrade.h"
 #include "version.h"
 
 #define USART0_TDATA_ADDRESS   ((uint32_t)&USART_TDATA(USART0))
 
 #define FLASH_PAGE_SIZE        1024U
-#define UPGRADE_SIZE           (64U * 1024U)  /* 固定用 flash 末尾 64KB 做升级区 */
+#define UPGRADE_SIZE           UPGRADE_IMAGE_SIZE  /* flash 末尾 60KB 做升级暂存区 */
 #define DATA_PACKET_MAX        128U
 #define ERASE_ACK_PAGES        8U      /* 擦除时按页数近似 500ms 发一次“擦除中” */
 #define TX_TIMEOUT_MS          100U
@@ -52,7 +53,7 @@ typedef struct {
 static iap_ctx_t s_iap;
 static uint8_t s_tx[32];
 
-/* 升级镜像固定写在 flash 末尾的 64KB */
+/* 升级镜像固定写在 flash 末尾的 60KB，中间 8KB 是常驻 upgrade 代码 */
 static uint32_t upgrade_base_addr(void)
 {
     return memmap_flash_end() - UPGRADE_SIZE;
@@ -210,8 +211,8 @@ parse_err_t ack_version(const uint8_t *frame, uint16_t len)
     return send_ack(0x02, out, 2U);
 }
 
-/* 
- * 0x03 发送文件大小：检查剩余 flash 是否放得下，回 0xF2 0x03 
+/*
+ * 0x03 发送文件大小：检查剩余 flash 是否放得下，回 0xF2 0x03
  * 这里有错就不send_ack了直接返回错误
  */
 parse_err_t ack_file_size(const uint8_t *frame, uint16_t len)
@@ -243,9 +244,9 @@ parse_err_t ack_file_size(const uint8_t *frame, uint16_t len)
         out[1] = (uint8_t)(size >> 16);
         out[2] = (uint8_t)(size >> 8);
         out[3] = (uint8_t)size;
-	e = send_ack(0x03, out, 4U);
-	if (e != ERR_OK)
-		return e;
+        e = send_ack(0x03, out, 4U);
+        if (e != ERR_OK)
+            return e;
     }
     /* size不对, 返回ERR_IAP_SIZE */
     return (s_iap.size_ok != 0U) ? ERR_OK : ERR_IAP_SIZE;
@@ -283,7 +284,7 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
         }
         fmc_lock();
 
-	/* 擦除了8K后回应一次 */
+        /* 擦除了8K后回应一次 */
         pages++;
         if (pages >= ERASE_ACK_PAGES) {
             pages = 0U;
@@ -294,7 +295,7 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
         }
     }
 
-	/* 擦除完成 */
+    /* 擦除完成 */
     s_iap.erased     = 1U;
     s_iap.write_addr = s_iap.base_addr;
     s_iap.prog_bytes = 0U;
@@ -353,6 +354,7 @@ parse_err_t ack_packet_id(const uint8_t *frame, uint16_t len)
         return ERR_IAP_SIZE;
     }
 
+    /* 写flash */
     fmc_unlock();
     fmc_clear_flags();
     flash_write(&frame[FRAME_HDR_LEN + 2U], payload_len);
@@ -387,7 +389,7 @@ parse_err_t ack_number_of_packets(const uint8_t *frame, uint16_t len)
     if (s_iap.active == 0U) {
         return ERR_IAP_STATE;
     }
-    if (data_len < 2U) {
+    if (data_len != 2U) {
         return ERR_IAP_PARAM;
     }
 
@@ -419,7 +421,7 @@ parse_err_t ack_all_data_crc(const uint8_t *frame, uint16_t len)
     if (s_iap.size_ok == 0U) {
         return ERR_IAP_SIZE;
     }
-    if (data_len < 2U) {
+    if (data_len != 2U) {
         return ERR_IAP_PARAM;
     }
 
@@ -447,7 +449,7 @@ parse_err_t ack_all_data_crc(const uint8_t *frame, uint16_t len)
     return (s_iap.crc_ok != 0U) ? ERR_OK : ERR_IAP_CRC;
 }
 
-/* 0x08 完成重启：校验通过后回 0xF2 0x09 并复位 */
+/* 0x08 完成重启：校验通过后回 0xF2 0x09，再交换前后 60K 并复位 */
 parse_err_t ready_rebot(const uint8_t *frame, uint16_t len)
 {
     parse_err_t e;
@@ -477,8 +479,11 @@ parse_err_t ready_rebot(const uint8_t *frame, uint16_t len)
         return e;
     }
 
+    /* 等最后一帧发完，然后把前后 60K 对调并复位，不返回 */
     vTaskDelay(pdMS_TO_TICKS(20));
-    NVIC_SystemReset();
+
+    upgrade_apply(memmap_flash_start(), s_iap.base_addr);
+
     return ERR_OK;
 }
 
