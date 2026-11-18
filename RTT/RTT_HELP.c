@@ -8,7 +8,7 @@
 
 #include "memmap.h"
 #include "parse.h"
-#include "rtt_help.h"
+#include "RTT_HELP.h"
 #include "upgrade.h"
 #include "version.h"
 
