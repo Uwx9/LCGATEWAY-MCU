@@ -1,10 +1,13 @@
 #include "FreeRTOS.h"
+#include "parse-error.h"
 #include "task.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "gd32f3x0.h"
 
+#include "DIDO.h"
 #include "memmap.h"
 #include "operats.h"
 #include "parse.h"
@@ -173,6 +176,41 @@ static void flash_write(const uint8_t *data, uint16_t len)
             s_iap.word_len = 0U;
         }
     }
+}
+
+/*
+ * 0x01 设置DO, 数据分别为DO编号和状态(0表示拉低，1表示拉高)
+ * 返回数据表示设置DO是否成功(0表示成功，非0表示失败)
+ */
+parse_err_t ack_set_DO(const uint8_t *frame, uint16_t len)
+{
+    uint8_t data_len = (uint8_t)(len - FRAME_OVERHEAD);
+    uint8_t out;
+    parse_err_t e;
+
+    if (data_len != 2U) {
+        return ERR_IAP_PARAM;
+    }
+
+    out = (uint8_t)DO_set(frame[FRAME_DATA_OFF], frame[FRAME_DATA_OFF + 1U]);
+
+    e = send_ack(IAP_ACK(IAP_CMD_SET_DO), &out, 1U);
+    if (e != ERR_OK) {
+        return e;
+    }
+    return (out == 0U) ? ERR_OK : ERR_IAP_SET_DO;
+}
+
+/*
+ * 0x02 读取DI：DI 的 GPIO 映射确定后再实现。
+ * 目前直接返回错误，主机侧会超时。
+ */
+parse_err_t ack_read_DI(const uint8_t *frame, uint16_t len)
+{
+    (void)frame;
+    (void)len;
+
+    return ERR_IAP_READ_DI;
 }
 
 /*

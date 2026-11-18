@@ -39,7 +39,7 @@ extern uint8_t rxbuffer[RXBUF_SIZE];
 /* 只接受主机的 IAP 指令和测试指令 */
 static uint8_t is_host_cmd(uint8_t cmd)
 {
-    if ((cmd >= IAP_CMD_START) && (cmd <= IAP_CMD_FINISH)) {
+    if ((cmd >= IAP_CMD_SET_DO) && (cmd <= IAP_CMD_FINISH)) {
         return 1U;
     }
 #ifdef TEST5
@@ -315,10 +315,10 @@ parse_err_t on_frame(const uint8_t *frame, uint16_t len)
     configASSERT(is_host_cmd(cmd) != 0U);
 #endif
     switch (cmd) {
-    case IAP_CMD_SET_DO: /* 启动升级，数据带待升级版本号 */
+    case IAP_CMD_SET_DO: /* 设置DO */
         e = ack_set_DO(frame, len);
         goto out;
-    case IAP_CMD_READ_DI: /* 发送文件大小 */
+    case IAP_CMD_READ_DI: /* 读取DI */
         e = ack_read_DI(frame, len);
         goto out;
     case IAP_CMD_START: /* 启动升级，数据带待升级版本号 */

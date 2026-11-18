@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "parse-error.h"
 
-/* test5 的固件测试命令（0x7E）；生产固件注释掉这一行 */
+/* DMA 回绕测试（tests/test_dma_wrap.c）的固件测试命令（0x7E）；生产固件注释掉这一行 */
 #define TEST5
 
 #ifdef TEST5
@@ -23,7 +23,7 @@ void parse_test_counters(uint32_t out[5]);
  * CRC 低字节在前）：
  *   [0]       HEAD 0x40
  *   [1]       LEN  整帧字节数，包含 HEAD、LEN、CMD、DATA 和 CRC
- *   [2]       CMD  主机指令 0x03~0x09，MCU 应答为 CMD | 0x80
+ *   [2]       CMD  主机指令 0x01~0x09，MCU 应答为 CMD | 0x80
  *   [3..]     DATA
  *   [LEN-2]   CRC_L
  *   [LEN-1]   CRC_H
