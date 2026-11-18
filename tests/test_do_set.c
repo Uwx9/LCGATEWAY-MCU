@@ -1,7 +1,7 @@
 /*
  * 测试: DO 设置（test_do_set）
- * 测试方法: 通过 0x01 SET_DO 逐路设置 DO1~DO16 为高、再逐路设置回低，
- *           最后测试非法 DO 编号和非法状态。
+ * 测试方法: 通过 0x01 SET_DO 逐路设置 DO1~DO16 为高、再设置回低，
+ *           测试非法 DO 编号和非法状态，最后再把 DO1~DO16 全部置高。
  * 测试目标: 每条设置命令都收到 0x81 应答；正常设置 result=0，
  *           非法参数 result!=0。
  * 测试目的: 验证 DO 指令解析、DO 编号映射和 GPIO 配置路径能正常执行。
@@ -71,7 +71,7 @@ int main(int argc, char **argv)
         }
     }
 
-    /* 全部拉低，结束时停在安全状态 */
+    /* 全部拉低，验证关闭状态 */
     for (id = 1U; id <= DO_COUNT; id++) {
         if (check_do(id, 0U, 1) != 0) {
             goto out;
@@ -87,6 +87,13 @@ int main(int argc, char **argv)
     }
     if (check_do(1U, 2U, 0) != 0) {
         goto out;
+    }
+
+    /* 最后全部置高，便于观察或确认所有 DO 输出 */
+    for (id = 1U; id <= DO_COUNT; id++) {
+        if (check_do(id, 1U, 1) != 0) {
+            goto out;
+        }
     }
 
     printf("DO SET PASS\n");
