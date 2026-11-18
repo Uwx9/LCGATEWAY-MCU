@@ -36,6 +36,7 @@ uint32_t rx_dma_total(void)
     uint32_t cnt;
     uint32_t pos;
 
+	//TODO
     do {
         lap_a = rx_dma_wraps;
         cnt   = dma_transfer_number_get(DMA_CH2);

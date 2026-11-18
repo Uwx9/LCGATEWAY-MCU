@@ -233,7 +233,7 @@ parse_err_t process_all_available(void)
     }
 
     while (read_total != tail) {
-        parse_err_t e = parse_feed(rxbuffer[pos]);
+        e = parse_feed(rxbuffer[pos]);
 
         /* 这一帧有问题：整帧丢弃，等主机重发 */
         if (e != ERR_OK) {

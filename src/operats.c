@@ -34,23 +34,23 @@ __IO FlagStatus g_transfer_complete = RESET;
  *       全程只需要一个实例，贯穿【开始升级 → 收包 → 烧写 → 校验 → 结束】整个生命周期
  */
 typedef struct {
-    uint8_t  active;		// 升级会话是否激活：1=正在进行升级，0=空闲/无升级任务
-    uint8_t  size_ok;		// 固件长度校验标记：1=文件大小合法且不超过升级区(64K)；0=未校验/超限
-    uint8_t  erased;		// 升级分区擦除标记：1=目标Flash分区已经完成擦除；0=未擦除
-    uint8_t  crc_ok;		// CRC校验结果标记：1=整包固件CRC校验通过；0=校验失败/还没校验
-    uint8_t  flash_error;	// Flash 擦除或编程失败标记：1=本次升级中发生过 flash 操作错误；0=正常
-    uint8_t  have_last;		// 是否已有上一个有效包号：1=last_packet_id 有效；0=还没收到过数据包
-    uint8_t  word_len;		// 残余缓存内有效字节数：范围0~3，记录暂存的零散字节数量，用来拼成32bit字给flash_flush_word
+    uint8_t  active;			// 升级会话是否激活：1=正在进行升级，0=空闲/无升级任务
+    uint8_t  size_ok;			// 固件长度校验标记：1=文件大小合法且不超过升级区(64K)；0=未校验/超限
+    uint8_t  erased;			// 升级分区擦除标记：1=目标Flash分区已经完成擦除；0=未擦除
+    uint8_t  crc_ok;			// CRC校验结果标记：1=整包固件CRC校验通过；0=校验失败/还没校验
+    uint8_t  flash_error;		// Flash 擦除或编程失败标记：1=本次升级中发生过 flash 操作错误；0=正常
+    uint8_t  have_last;			// 是否已有上一个有效包号：1=last_packet_id 有效；0=还没收到过数据包
+    uint8_t  word_len;			// 残余缓存内有效字节数：范围0~3，记录暂存的零散字节数量，用来拼成32bit字给flash_flush_word
     uint8_t new_version_major;	// 待升级固件的版本号major，主机下发固件时携带
     uint8_t new_version_minor;  // 待升级固件的版本号minor，主机下发固件时携带
     uint16_t declared_packets;	// 主机声明的总包数：数据包发完后由 0x07 命令告诉 MCU 一共发了多少包
-    uint16_t recv_packets;	// MCU已经成功接收的数据包计数，用来和declared_packets对比判断是否收完
+    uint16_t recv_packets;		// MCU已经成功接收的数据包计数，用来和declared_packets对比判断是否收完
     uint16_t last_packet_id;	// 上一个收到的包ID，用来做丢包检测、防重复包、顺序校验
-    uint32_t file_size;		// 固件总字节长度（主机下发）
-    uint32_t base_addr;		// 升级分区起始基地址
-    uint32_t write_addr;	// 当前正在写入Flash的目标地址，每写一个word自动递增4
-    uint32_t prog_bytes;	// 已经成功烧录到Flash的总字节数
-    uint32_t word;		// 残余字节缓存：攒够4字节由 flash_write 写入；收尾不足4字节由 flash_flush_word 补0xFF后写入
+    uint32_t file_size;			// 固件总字节长度（主机下发）
+    uint32_t base_addr;			// 升级分区起始基地址
+    uint32_t write_addr;		// 当前正在写入Flash的目标地址，每写一个word自动递增4
+    uint32_t prog_bytes;		// 已经成功烧录到Flash的总字节数
+    uint32_t word;				// 残余字节缓存：攒够4字节由 flash_write 写入；收尾不足4字节由 flash_flush_word 补0xFF后写入
 } iap_ctx_t;
 
 static iap_ctx_t s_iap;
@@ -237,6 +237,12 @@ parse_err_t ack_upgrade(const uint8_t *frame, uint16_t len)
                    ((new_major == g_fw_version_num.major) &&
                     (new_minor > g_fw_version_num.minor))) ? 1U : 0U;
 
+	//TODO 
+	// ack_upgrade() 无条件 memset，重复/过期 0x03 会破坏正在进行的会话
+	//    src/operats.c:240 不论 can_upgrade 是否为 1 都清零 s_iap；
+	//    如果主机因 ACK 丢失重发 0x03，或误发旧版本 0x03，write_addr 回到 base、have_last=0，
+	// 下一次 0x06 会被当成首包从 base 开始写，镜像整体错位，最后 CRC 失败。
+	//    建议：active 时拒绝新的 0x03，或让 0x03 幂等（不重置已有进度）。
     memset(&s_iap, 0, sizeof(s_iap));
     if (can_upgrade != 0U) {
         s_iap.active             = 1U;
@@ -356,6 +362,8 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
     s_iap.have_last    = 0U;
     s_iap.word         = 0U;
     s_iap.word_len     = 0U;
+	s_iap.crc_ok	   = 0U;
+	s_iap.flash_error  = 0U;
 
     return ERR_OK;
 }
@@ -386,6 +394,8 @@ parse_err_t ack_packet_id(const uint8_t *frame, uint16_t len)
 
     id = (uint16_t)(((uint16_t)frame[FRAME_DATA_OFF] << 8) |
                     frame[FRAME_DATA_OFF + 1U]);
+	if (s_iap.have_last == 0 && id != 0)
+		return ERR_IAP_SEQ;
 
     /* 重发的包只回 ACK，不重复写 flash */
     if ((s_iap.have_last != 0U) && (id == s_iap.last_packet_id)) {

@@ -7,7 +7,7 @@ typedef enum {
     ERR_NO_HEAD		= -1,   /* 找帧头时丢掉了非帧头字节 */
     ERR_BAD_LEN		= -3,   /* LEN 小于 5 或大于 FRAME_LEN_MAX */
     ERR_BAD_CMD		= -4,   /* CMD 不是合法的 IAP 主机指令 */
-    ERR_CRC		= -5,   /* CRC 校验失败 */
+    ERR_CRC			= -5,   /* CRC 校验失败 */
     ERR_PARTIAL		= -6,   /* 一次 idle 突发结束时帧还不完整 */
     ERR_RX_MOVED	= -7,   /* 解析过程中 DMA 尾指针又前进了 */
     ERR_OVERRUN		= -8,   /* 未读数据已经被 DMA 覆盖 */
