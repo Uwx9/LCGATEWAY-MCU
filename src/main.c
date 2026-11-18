@@ -165,10 +165,11 @@ int main(void)
     /* 低优先级任务，轮询主机经 RTT 下发的命令 */
     rtt_cmd_task_start();
 
-    rcu_periph_clock_enable(RCU_GPIOC);
-    gpio_mode_set(GPIOC, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_13);
-    gpio_output_options_set(GPIOC, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, GPIO_PIN_13);
-    gpio_bit_set(GPIOC, GPIO_PIN_13);
+    /* led */
+    // rcu_periph_clock_enable(RCU_GPIOC);
+    // gpio_mode_set(GPIOC, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_13);
+    // gpio_output_options_set(GPIOC, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, GPIO_PIN_13);
+    // gpio_bit_set(GPIOC, GPIO_PIN_13);
 
     /* 正常不返回 */
     vTaskStartScheduler();
