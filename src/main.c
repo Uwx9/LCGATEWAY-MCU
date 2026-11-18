@@ -166,7 +166,6 @@ int main(void)
     rtt_cmd_task_start();
 
     rcu_periph_clock_enable(RCU_GPIOC);
-    gpio_deinit(GPIOC);
     gpio_mode_set(GPIOC, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_13);
     gpio_output_options_set(GPIOC, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, GPIO_PIN_13);
     gpio_bit_set(GPIOC, GPIO_PIN_13);
