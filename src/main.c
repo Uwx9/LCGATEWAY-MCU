@@ -3,7 +3,7 @@
 #include "task.h"
 #include "parse.h"
 #include "parse-error.h"
-#include "rtt_help.h"
+#include "RTT_HELP.h"
 #include "SEGGER_RTT.h"
 
 #define USART0_RDATA_ADDRESS      ((uint32_t)&USART_RDATA(USART0))
