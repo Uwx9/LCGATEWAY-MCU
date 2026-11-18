@@ -6,18 +6,16 @@
 #include "task.h"
 #include <stdint.h>
 
-/* LEN 字段合法范围：至少要 5 字节头，整帧又不能FRAME */
-#define FRAME_LEN_MIN		FRAME_HDR_LEN
-#define FRAME_LEN_MAX		(FRAME_MAX_SIZE - 2)
+_Static_assert(FRAME_LEN_MAX <= RXBUF_SIZE, "frame larger than RX ring");
 
 typedef enum {
-    S_HEAD = 0, S_RW, S_LEN, S_CMD, S_SUB, S_DATA, S_CRC_L, S_CRC_H
+    S_HEAD = 0, S_LEN, S_CMD, S_DATA, S_CRC_L, S_CRC_H
 } parse_state_t;
 
 static struct {
     parse_state_t st;
     uint16_t idx;
-    uint8_t  len;      /* LEN 字段 */
+    uint8_t  len;      /* LEN 字段：整帧字节数 */
     uint8_t  need;     /* 还差多少个数据字节 */
     uint8_t  done;     /* 本次突发已经交付一帧 */
     uint8_t  buf[RXBUF_SIZE];  /* 整帧：HEAD..DATA + CRC */
@@ -37,6 +35,20 @@ static uint8_t s_test_jump;
 
 /* 虽然正常情况avail最大为FRAME_MAX_SIZE, 但这里允许主机传RXBUF_SIZE大小字节 */
 extern uint8_t rxbuffer[RXBUF_SIZE];
+
+/* 只接受主机的 IAP 指令和测试指令 */
+static uint8_t is_host_cmd(uint8_t cmd)
+{
+    if ((cmd >= IAP_CMD_START) && (cmd <= IAP_CMD_FINISH)) {
+        return 1U;
+    }
+#ifdef TEST5
+    if (cmd == TEST_CMD) {
+        return 1U;
+    }
+#endif
+    return 0U;
+}
 
 /* 状态机复位 */
 static void parse_reset(void)
@@ -99,7 +111,6 @@ void parse_test_counters(uint32_t out[5])
 }
 #endif
 
-/* ps使用 */
 /**
  * @brief CRC16校验 *
  * @details 用于Modbus通信的CRC16校验 *
@@ -129,7 +140,7 @@ uint16_t CrcValueCalc(const uint8_t *cpucData, uint32_t len)
 static parse_err_t parse_feed(const uint8_t b)
 {
 #ifdef DEBUG
-    configASSERT(p.idx < FRAME_MAX_SIZE);
+    configASSERT(p.idx < RXBUF_SIZE);
 #endif
     switch (p.st) {
     case S_HEAD:
@@ -138,40 +149,23 @@ static parse_err_t parse_feed(const uint8_t b)
         }
         p.buf[0] = b;
         p.idx = 1;
-        p.st  = S_RW;
-        return ERR_OK;
-
-    case S_RW:
-        if (b != FRAME_RW) {
-            return ERR_BAD_RW;
-        }
-        p.buf[p.idx++] = b;
-        p.st = S_LEN;
+        p.st  = S_LEN;
         return ERR_OK;
 
     case S_LEN:
-        if (b < FRAME_LEN_MIN || (uint16_t)b > FRAME_LEN_MAX) {
+        if ((b < FRAME_LEN_MIN) || (b > FRAME_LEN_MAX)) {
             return ERR_BAD_LEN;
         }
         p.buf[p.idx++] = b;
         p.len  = b;
-        p.need = (uint8_t)(b - FRAME_HDR_LEN);
+        p.need = (uint8_t)(b - FRAME_OVERHEAD);
         p.st   = S_CMD;
-// #ifdef DEBUG
-//         // len似乎不包含2字节的crc
-//         configASSERT(p.len == (rx_dma_total() - (read_total - 2) - 2));
-// #endif
         return ERR_OK;
 
     case S_CMD:
-        if (b != CMD_HOST && b != CMD_SLAVE) {
+        if (is_host_cmd(b) == 0U) {
             return ERR_BAD_CMD;
         }
-        p.buf[p.idx++] = b;
-        p.st = S_SUB;
-        return ERR_OK;
-
-    case S_SUB:
         p.buf[p.idx++] = b;
         p.st = p.need ? S_DATA : S_CRC_L;
         return ERR_OK;
@@ -193,9 +187,9 @@ static parse_err_t parse_feed(const uint8_t b)
         uint16_t calc;
 
         p.buf[p.idx++] = b;
-        got  = (uint16_t)p.buf[p.len]
-               | ((uint16_t)p.buf[p.len + 1U] << 8);
-        calc = CrcValueCalc(p.buf, p.len);
+        got  = (uint16_t)p.buf[p.len - 2U]
+               | ((uint16_t)p.buf[p.len - 1U] << 8);
+        calc = CrcValueCalc(p.buf, (uint32_t)(p.len - 2U));
 
         if (calc == got) {
             p.done = 1;
@@ -256,9 +250,9 @@ parse_err_t process_all_available(void)
         /* 一帧成功交付，本次突发后面的字节当噪声丢掉 */
         if (p.done) {
 #ifdef DEBUG
-            configASSERT(p.len + 2 <= FRAME_MAX_SIZE);
+            configASSERT(p.len <= FRAME_MAX_SIZE);
 #endif
-            e = on_frame(p.buf, (uint16_t)(p.len + 2U));
+            e = on_frame(p.buf, p.len);
             parse_reset();
 
             /* 动作错误就直接out */
@@ -314,42 +308,42 @@ out: {
 parse_err_t on_frame(const uint8_t *frame, uint16_t len)
 {
     parse_err_t e = ERR_OK;
-    uint8_t sub_cmd = frame[4];
+    uint8_t cmd = frame[2];
+
 #ifdef DEBUG
-    configASSERT(frame[3] == CMD_HOST);
-#ifdef TEST5
-    configASSERT(((0x01 <= sub_cmd) && (sub_cmd <= 0x08)) || (sub_cmd == 0x7E));
-#else
-    configASSERT((0x01 <= sub_cmd) && (sub_cmd <= 0x08));
+    configASSERT(frame[0] == FRAME_HEAD);
+    configASSERT(is_host_cmd(cmd) != 0U);
 #endif
-#endif
-    switch (sub_cmd) {
-    case 0x01: /* 启动升级 */
+    switch (cmd) {
+    case IAP_CMD_SET_DO: /* 启动升级，数据带待升级版本号 */
+        e = ack_set_DO(frame, len);
+        goto out;
+    case IAP_CMD_READ_DI: /* 发送文件大小 */
+        e = ack_read_DI(frame, len);
+        goto out;
+    case IAP_CMD_START: /* 启动升级，数据带待升级版本号 */
         e = ack_upgrade(frame, len);
         goto out;
-    case 0x02: /* 发送版本号 */
-        e = ack_version(frame, len);
-        goto out;
-    case 0x03: /* 发送文件大小 */
+    case IAP_CMD_FILE_SIZE: /* 发送文件大小 */
         e = ack_file_size(frame, len);
         goto out;
-    case 0x04: /* 开始擦除 */
+    case IAP_CMD_ERASE: /* 开始擦除 */
         e = ack_eraseing(frame, len);
         goto out;
-    case 0x05: /* 发送数据 */
+    case IAP_CMD_DATA: /* 发送数据 */
         e = ack_packet_id(frame, len);
         goto out;
-    case 0x06: /* 总数据包数 */
+    case IAP_CMD_PACKETS: /* 总数据包数 */
         e = ack_number_of_packets(frame, len);
         goto out;
-    case 0x07: /* 总数据校验 */
+    case IAP_CMD_TOTAL_CRC: /* 总数据校验 */
         e = ack_all_data_crc(frame, len);
         goto out;
-    case 0x08: /* 完成重启 */
+    case IAP_CMD_FINISH: /* 完成重启 */
         e = ready_rebot(frame, len);
         goto out;
 #ifdef TEST5
-    case 0x7E: /* 测试命令：预置/回读回绕计数 */
+    case TEST_CMD: /* 测试命令：预置/回读回绕计数 */
         e = test_cmd(frame, len);
         goto out;
 #endif
