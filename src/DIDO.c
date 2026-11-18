@@ -40,7 +40,7 @@ static const do_pin_t s_do_map[] = {
     {GPIOB, GPIO_PIN_10, RCU_GPIOB},   /* DO11 */
     {GPIOB, GPIO_PIN_11, RCU_GPIOB},   /* DO12 */
     {GPIOB, GPIO_PIN_12, RCU_GPIOB},   /* DO13 */
-    {GPIOB, GPIO_PIN_13, RCU_GPIOB},   /* DO14 */
+    {GPIOC, GPIO_PIN_13, RCU_GPIOC},   /* DO14 */
     {GPIOB, GPIO_PIN_14, RCU_GPIOB},   /* DO15 */
     {GPIOB, GPIO_PIN_15, RCU_GPIOB},   /* DO16 */
 };

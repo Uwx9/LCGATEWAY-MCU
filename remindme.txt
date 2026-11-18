@@ -50,3 +50,7 @@ read_total还用于得到在buffer中的pos,只要bufffer的size是2的n次方�
 关于版本
 二进制有一个fw_version_str节(固定偏移flash 0x150字节 是32字节字符串) 
 和一个fw_version_num节(偏移0x170(0x150+32)共两个字节,低地址字节是major,高地址字节是minor)
+
+命令
+sudo sh -c "printf '\x40\x07\x01\x10\x00' > /dev/ttyUSB0"
+sudo sh -c "printf '\x40\x07\x01\x10\x00\x78\xBB' > /dev/ttyUSB0"
