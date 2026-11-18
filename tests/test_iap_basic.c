@@ -11,7 +11,9 @@
  *   ./test_iap_basic [/dev/ttyUSB0]
  *
  * 流程：0x03 启动（带版本号） -> 0x04 文件大小 -> 0x05 擦除
- *       -> 0x06 一包数据 -> 0x07 总包数 -> 0x08 总校验 -> 0x09 完成重启
+ *       -> 0x06 一包数据 -> 0x07 总包数 -> 0x08 总校验
+ * 0x09 会写 metadata 并让 bootloader 拷贝，本测试用的是假数据，不能执行；
+ * 完整升级流程请用 test_iap_upgrade（真实 ELF）。
  * 每一步都校验应答帧的 CMD/LEN/DATA/CRC。
  */
 
@@ -98,9 +100,7 @@ int main(int argc, char **argv)
     if (report("total crc", iap_crc(crc), NULL, 0U) != 0) {
         goto out;
     }
-    if (report("finish/reboot", iap_finish(), NULL, 0U) != 0) {
-        goto out;
-    }
+    printf("SKIP finish/reboot (fake payload; use test_iap_upgrade)\n");
 
     printf("IAP BASIC PASS\n");
     ret = 0;

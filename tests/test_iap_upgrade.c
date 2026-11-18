@@ -13,8 +13,8 @@
  * 运行（在 tests 目录下）:
  *   ./test_iap_upgrade [/dev/ttyUSB0] [fw0.2.elf]
  *
- * 注意: 固件 ELF 只取 p_paddr 在 0x08000000~0x0800EFFF 的段，中间的
- *       upgrade 代码段不会被下载。更新前后可以用 RTT 的 ps 看版本和存储布局。
+ * 注意: 固件 ELF 只取 p_paddr 在 0x08002000~0x08010FFF 的 app 段；
+ *       更新前后可以用 RTT 的 ps 看版本和存储布局。
  */
 
 #include <stdint.h>
@@ -27,8 +27,8 @@
 #include "iap_flow.h"
 
 #define ELF_PT_LOAD     1U
-#define APP_BASE        0x08000000U
-#define APP_LIMIT       0x0800F000U          /* 中间 8K upgrade 区起点 */
+#define APP_BASE        0x08002000U          /* app 链接地址 */
+#define APP_LIMIT       0x08011000U          /* app 区结束，stage 起点 */
 #define APP_MAX         (APP_LIMIT - APP_BASE)
 
 #define VER_STR_OFF     0x150U
@@ -218,7 +218,7 @@ static int send_packet(uint16_t id, const uint8_t *data, uint8_t len)
 int main(int argc, char **argv)
 {
     const char *dev = (argc > 1) ? argv[1] : "/dev/ttyUSB0";
-    const char *elf = (argc > 2) ? argv[2] : "fw0.2.elf";
+    const char *elf = (argc > 2) ? argv[2] : "fw_debug_0_2.elf";
     uint8_t *image;
     size_t image_size = 0U;
     size_t off;

@@ -4,17 +4,20 @@
 CC     ?= cc
 CFLAGS  = -std=gnu11 -Wall -Wextra -O2
 
+BUILD_DIR = build
 BINS    = test_iap_basic test_do_set test_dma_wrap test_iap_upgrade
+TARGETS = $(addprefix $(BUILD_DIR)/,$(BINS))
 
 COMMON  = frame_io.c iap_flow.c
 HEADERS = frame_io.h iap_flow.h
 
-all: $(BINS)
+all: $(TARGETS)
 
-%: %.c $(COMMON) $(HEADERS)
+$(BUILD_DIR)/%: %.c $(COMMON) $(HEADERS)
+	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $< $(COMMON) -o $@
 
 clean:
-	rm -f $(BINS) test_dma_overflow test_frame_errors
+	rm -rf $(BUILD_DIR)
 
 .PHONY: all clean

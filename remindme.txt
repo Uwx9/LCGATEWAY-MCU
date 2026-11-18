@@ -2,21 +2,26 @@ GD32F310C8T6为72MHZ 8K ram + 64K flash
 GD32F330CBT6为84MHZ 16K ram + 128K flash
 
 
+flash布局：
+0x08000000 + 8K   bootloader（6K代码 + 2K metadata）
+0x08002000 + 60K  app
+0x08011000 + 60K  stage
+
 关于elf产物
-第一个可执行段就在8M处，代码直接在这里执行
+app 第一个可执行段在 0x08002000；0x08000000 是 bootloader
 .data .bss 在flash中位于上面那个可执行段后面，但是会被加载到2M地址处.bss不占文件空间
 .heap_stack紧跟其后，这个节不占文件空间
 
 ram的使用情况，按顺序
 .data 是有初值的变量
 .bss 是FreeRTOS ucHeap 4K configTOTAL_HEAP_SIZE预留的堆 + 
-代码定义的没有初始化的变量, .bss大约6K左右
-.heap_stack是newlib malloc堆1K + MSP 栈2K
-上面这种情况下超出ram大小了，可以把msp改为1K
+代码定义的没有初始化的变量, 当前约9.8K
+.heap_stack是newlib malloc堆1K + MSP 栈1K（Makefile __stack_size=0x400）
+当前约11.9K/16K，未超
 
-启动流程: 
-先从0x0000 0000地址获取栈顶值(_sp, 链接脚本中是msp栈的顶端)，再从
-0x0000 0004地址获得引导代码的基地址，然后从引导代码的基地址开始执行程序
+启动流程:
+复位后先运行 0x08000000 的 bootloader；bootloader 校验/拷贝 stage 后跳 app。
+app 自己的启动流程：从 app 向量表获取 _sp 和 Reset_Handler，然后执行。
 1. 复位，BOOT 选择主 Flash → Flash 别名到 0x00000000。
 2. CPU 从 0x00000000 取 MSP = _sp，从 0x00000004 取 PC = Reset_Handler。
 (flash开头节是.vectors 该节的头两个值就是_sp和Reset_Handler)
@@ -48,8 +53,8 @@ TODO 下载的时候如果是发送128字节就等待回应，不用改ch2, 解�
 read_total还用于得到在buffer中的pos,只要bufffer的size是2的n次方，pos总能正确绕回
 
 关于版本
-二进制有一个fw_version_str节(固定偏移flash 0x150字节 是32字节字符串) 
-和一个fw_version_num节(偏移0x170(0x150+32)共两个字节,低地址字节是major,高地址字节是minor)
+app 镜像里有 fw_version_str 节(app 基址 +0x150，32字节字符串)
+和 fw_version_num 节(app 基址 +0x170，共两个字节，低地址是 major，高地址是 minor)
 
 命令
 sudo sh -c "printf '\x40\x07\x01\x10\x00' > /dev/ttyUSB0"

@@ -1,4 +1,4 @@
-for f in build/release/fw.elf build/debug/fw_debug.elf; do
+for f in app/build/release/fw.elf app/build/debug/fw_debug.elf; do
 	line=$(printf '=%.0s' {1..72})
 	printf '\n\033[1;36m%s\033[0m\n' "$line"
 	printf '\033[1;97;44m  %s  \033[0m\n' "$f"

@@ -15,10 +15,10 @@ CHIP   = GD32F330
 DEVICE = GD32F330CB
 
 # dir
-SRCDIR   = src
-FW       = Firmware
-RTOS	 = FreeRTOS
-RTT	 = RTT
+SRCDIR   = app/src
+FW       = app/Firmware
+RTOS	 = app/FreeRTOS
+RTT	 = app/RTT
 
 # all c files and .o .d files
 RTOS_SRCS = $(wildcard $(RTOS)/*.c)
@@ -35,14 +35,14 @@ DEPS = $(patsubst %.c,$(OBJDIR)/%.d,$(SRCS))
 BUILD_CONFIG := debug
 
 ifeq ($(BUILD_CONFIG),debug)
-	OBJDIR   := build/debug/obj
-	OUTDIR   := build/debug
+	OBJDIR   := app/build/debug/obj
+	OUTDIR   := app/build/debug
 	EXE      := $(OUTDIR)/$(TARGET)_debug
 	OPT      := $(if $(OPT),$(OPT),-Og) -g3 -gdwarf-4 -fno-omit-frame-pointer
 	CFG_DEFS := -DDEBUG=1 -DUSE_FULL_ASSERT
 else
-	OBJDIR   := build/release/obj
-	OUTDIR   := build/release
+	OBJDIR   := app/build/release/obj
+	OUTDIR   := app/build/release
 	EXE      := $(OUTDIR)/$(TARGET)
 	OPT      := $(if $(OPT),$(OPT),-O2)
 	CFG_DEFS := -DNDEBUG
@@ -53,7 +53,7 @@ INC = -I$(SRCDIR) -I$(FW)/CMSIS -I$(FW)/CMSIS/GD/GD32F3x0/Include \
    -I$(FW)/GD32F3x0_standard_peripheral/Include -I$(RTOS)/include \
    -I$(RTT)/
 
-CFLAGS  = -std=gnu11 $(ARCH) -D$(CHIP) $(CFG_DEFS) $(OPT) \
+CFLAGS  = -std=gnu11 $(ARCH) -D$(CHIP) -DVECT_TAB_OFFSET=0x2000U $(CFG_DEFS) $(OPT) \
           -Wall -ffunction-sections  -fno-strict-aliasing -fdata-sections $(INC)
 LDFLAGS = $(ARCH) -T$(LDSCRIPT) -Wl,--gc-sections \
           -Wl,-Map=$(EXE).map --specs=nano.specs \
@@ -106,10 +106,10 @@ format:
 	@astyle -n --style=linux $(FMT_FILES)
 
 #default build files
-DEBUG_ELF_FILE = build/debug/$(TARGET)_debug.elf
-DEBUG_BIN_FILE = build/debug/$(TARGET)_debug.bin
-RELEASE_ELF_FILE = build/release/$(TARGET).elf
-RELEASE_BIN_FILE = build/release/$(TARGET).bin
+DEBUG_ELF_FILE = app/build/debug/$(TARGET)_debug.elf
+DEBUG_BIN_FILE = app/build/debug/$(TARGET)_debug.bin
+RELEASE_ELF_FILE = app/build/release/$(TARGET).elf
+RELEASE_BIN_FILE = app/build/release/$(TARGET).bin
 
 rtt: flash-rtt
 run: flash reset
@@ -145,12 +145,12 @@ flash-rs-release-elf: all
 	probe-rs download --chip $(DEVICE) $(RELEASE_ELF_FILE)
 flash-rs-release-bin: all
 	probe-rs download --chip $(DEVICE) --binary-format bin \
-	--base-address 0x08000000 $(RELEASE_BIN_FILE)
+	--base-address 0x08002000 $(RELEASE_BIN_FILE)
 flash-rs-debug-elf: all
 	probe-rs download --chip $(DEVICE) $(DEBUG_ELF_FILE)
 flash-rs-debug-bin: all
 	probe-rs download --chip $(DEVICE) --binary-format bin \
-	--base-address 0x08000000 $(DEBUG_BIN_FILE)
+	--base-address 0x08002000 $(DEBUG_BIN_FILE)
 
 #TODO 使用GD32 ISP CONSOLE 烧录
 flash-isp-release-elf:
@@ -165,7 +165,7 @@ flash-pyocd-debug-elf:
 flash-pyocd-debug-bin:
 
 clean:                                                                                                                           
-	@rm -rf build 
+	@rm -rf app/build
 
 dbg:
 	#TODO 使用probe-rs + gdb调试
