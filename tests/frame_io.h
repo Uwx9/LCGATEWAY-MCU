@@ -13,6 +13,8 @@
 #define FRAME_MAX_SIZE  FRAME_LEN_MAX
 
 /* 主机 IAP 指令，MCU 应答指令 = 主机指令 | 0x80 */
+#define IAP_CMD_SET_DO      0x01U
+#define IAP_CMD_READ_DI     0x02U
 #define IAP_CMD_START       0x03U
 #define IAP_CMD_FILE_SIZE   0x04U
 #define IAP_CMD_ERASE       0x05U

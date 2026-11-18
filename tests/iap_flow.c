@@ -8,6 +8,22 @@ static int expect(uint8_t cmd, const uint8_t *data, uint8_t data_len, uint8_t *g
     return recv_ack(cmd, data, data_len, NORMAL_TIMEOUT, got, NULL);
 }
 
+int iap_set_do(uint8_t id, uint8_t status, uint8_t *result)
+{
+    uint8_t d[2] = {id, status};
+    uint8_t got = 0xFFU;
+    int e;
+
+    if (send_cmd(IAP_CMD_SET_DO, d, (uint8_t)sizeof(d)) != 0) {
+        return ACK_ERR_IO;
+    }
+    e = expect(IAP_ACK(IAP_CMD_SET_DO), NULL, 1U, &got);
+    if ((e == ACK_OK) && (result != NULL)) {
+        *result = got;
+    }
+    return e;
+}
+
 int iap_start(const uint8_t ver[2], uint8_t *can_upgrade)
 {
     uint8_t got = 0U;

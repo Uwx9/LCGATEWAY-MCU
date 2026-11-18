@@ -130,7 +130,7 @@ flash-rtt: all
 	probe-rs run --chip $(DEVICE) $(DEBUG_ELF_FILE)
 
 reset:
-	probe-rs reset --chip GD32F330CB
+	probe-rs reset --chip $(DEVICE)
 
 # verify
 verify:

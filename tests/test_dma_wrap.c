@@ -1,5 +1,5 @@
 /*
- * 测试5:
+ * 测试: DMA 回绕计数（test_dma_wrap）
  * 测试方法: 固件 TEST5 版提供 0x7E 测试命令，把 rx_dma_wraps 预置到 0xFFFFFF00，
  *           并按 BUF_SIZE*rx_dma_wraps 同步设置 read_total 和三个回绕计数
  * 测试目标: 预置后 dma_total_wraps=read_total_wraps=255、rx_dma_wraps_wraps=0；
@@ -8,10 +8,10 @@
  * 测试目的: 证明 32 位绝对字节计数和回绕计数在同步回绕时仍然自洽
  *
  * 编译:
- *   cc -std=gnu11 -Wall -Wextra -O2 test5.c frame_io.c -o test5
+ *   cc -std=gnu11 -Wall -Wextra -O2 test_dma_wrap.c frame_io.c -o test_dma_wrap
  *
  * 运行:
- *   ./test5 [/dev/ttyUSB0]
+ *   ./test_dma_wrap [/dev/ttyUSB0]
  *
  * 注意: 固件需要启用 src/parse.h 里的 TEST5（默认开启）；建议用 make 的
  *       debug 构建，parse.c 里的 avail 断言才会生效。
@@ -118,7 +118,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("IAP test5 on %s, lap=0x%08X\n", dev, (unsigned)TEST_LAP);
+    printf("DMA wrap test on %s, lap=0x%08X\n", dev, (unsigned)TEST_LAP);
 
     if (run_cmd(TEST_OP_PRESET, TEST_LAP, before) != 0) {
         goto out;
@@ -190,12 +190,12 @@ int main(int argc, char **argv)
         goto out;
     }
 
-    printf("TEST5 PASS\n");
+    printf("DMA WRAP PASS\n");
     ret = 0;
 
 out:
     if (ret != 0) {
-        printf("TEST5 FAIL\n");
+        printf("DMA WRAP FAIL\n");
     }
     serial_close();
     return ret;

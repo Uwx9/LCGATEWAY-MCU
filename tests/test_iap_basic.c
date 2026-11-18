@@ -1,14 +1,14 @@
 /*
- * 测试1:
+ * 测试: IAP 基础流程（test_iap_basic）
  * 测试方法: 主机每个帧发送一次
  * 测试目标: 每一帧都得到正确响应
- * 测试目的: 最简单测试
+ * 测试目的: 最简单的 IAP 协议流程测试
  *
  * 编译：
- *   cc -std=gnu11 -Wall -Wextra -O2 test1.c frame_io.c iap_flow.c -o test1
+ *   cc -std=gnu11 -Wall -Wextra -O2 test_iap_basic.c frame_io.c iap_flow.c -o test_iap_basic
  *
  * 运行：
- *   ./test1 [/dev/ttyUSB0]
+ *   ./test_iap_basic [/dev/ttyUSB0]
  *
  * 流程：0x03 启动（带版本号） -> 0x04 文件大小 -> 0x05 擦除
  *       -> 0x06 一包数据 -> 0x07 总包数 -> 0x08 总校验 -> 0x09 完成重启
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("IAP test1 on %s, payload=%u, crc=0x%04X\n",
+    printf("IAP basic on %s, payload=%u, crc=0x%04X\n",
            dev, PAYLOAD_LEN, crc);
 
     if (report("start upgrade", iap_start(ver, &can_upgrade),
@@ -102,12 +102,12 @@ int main(int argc, char **argv)
         goto out;
     }
 
-    printf("TEST1 PASS\n");
+    printf("IAP BASIC PASS\n");
     ret = 0;
 
 out:
     if (ret != 0) {
-        printf("TEST1 FAIL\n");
+        printf("IAP BASIC FAIL\n");
     }
     serial_close();
     return ret;

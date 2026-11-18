@@ -1,5 +1,5 @@
 /*
- * 测试6:
+ * 测试: IAP 固件升级（test_iap_upgrade）
  * 测试方法: 读取 tests/fw0.2.elf，把它落在前 60K 的 PT_LOAD 段拼成完整 app 镜像，
  *           通过 IAP 协议真实下载、擦写并触发交换重启。
  * 测试目标: 旧固件被新固件替换；重启后版本号变为 ELF 里的版本。
@@ -8,10 +8,10 @@
  *           （目标版本不可升级、目标版本+1 可升级）夹出当前版本。
  *
  * 编译:
- *   cc -std=gnu11 -Wall -Wextra -O2 test6.c frame_io.c iap_flow.c -o test6
+ *   cc -std=gnu11 -Wall -Wextra -O2 test_iap_upgrade.c frame_io.c iap_flow.c -o test_iap_upgrade
  *
  * 运行（在 tests 目录下）:
- *   ./test6 [/dev/ttyUSB0] [fw0.2.elf]
+ *   ./test_iap_upgrade [/dev/ttyUSB0] [fw0.2.elf]
  *
  * 注意: 固件 ELF 只取 p_paddr 在 0x08000000~0x0800EFFF 的段，中间的
  *       upgrade 代码段不会被下载。更新前后可以用 RTT 的 ps 看版本和存储布局。
@@ -248,7 +248,7 @@ int main(int argc, char **argv)
     crc = crc16(image, image_size);
     total_packets = (uint16_t)((image_size + IAP_DATA_MAX - 1U) / IAP_DATA_MAX);
 
-    printf("IAP test6 on %s\n", dev);
+    printf("IAP upgrade test on %s\n", dev);
     printf("image: %s\n", elf);
     printf("  size=%u bytes, packets=%u, crc=0x%04X\n",
            (unsigned)image_size, (unsigned)total_packets, crc);
@@ -354,12 +354,12 @@ int main(int argc, char **argv)
     printf("running version: %u.%u (from start-version checks)\n",
            (unsigned)ver[0], (unsigned)ver[1]);
 
-    printf("TEST6 PASS\n");
+    printf("IAP UPGRADE PASS\n");
     ret = 0;
 
 out:
     if (ret != 0) {
-        printf("TEST6 FAIL\n");
+        printf("IAP UPGRADE FAIL\n");
     }
     serial_close();
     free(image);
