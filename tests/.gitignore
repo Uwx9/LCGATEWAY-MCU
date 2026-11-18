@@ -1,4 +1,13 @@
+# 只保留测试源码和 Makefile；构建产物、ELF/BIN、旧的手工二进制都不上传
 *
 !*.c
 !*.h
 !Makefile
+!.gitignore
+
+build/
+*.elf
+*.bin
+*.map
+*.o
+*.d

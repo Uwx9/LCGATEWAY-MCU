@@ -1,0 +1,7 @@
+# bootloader 构建产物，不上传二进制
+build/
+*.elf
+*.bin
+*.map
+*.o
+*.d
