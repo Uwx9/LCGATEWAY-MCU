@@ -10,9 +10,9 @@
  * 运行：
  *   ./test1 [/dev/ttyUSB0]
  *
- * 流程：0x01 启动 -> 0x02 版本 -> 0x03 文件大小 -> 0x04 擦除
- *       -> 0x05 一包数据 -> 0x06 总包数 -> 0x07 总校验 -> 0x08 完成重启
- * 每一步都校验应答帧的 CMD/SUB/LEN/DATA/CRC。
+ * 流程：0x03 启动（带版本号） -> 0x04 文件大小 -> 0x05 擦除
+ *       -> 0x06 一包数据 -> 0x07 总包数 -> 0x08 总校验 -> 0x09 完成重启
+ * 每一步都校验应答帧的 CMD/LEN/DATA/CRC。
  */
 
 #include <stdint.h>
@@ -45,7 +45,7 @@ int main(int argc, char **argv)
 {
     const char *dev = (argc > 1) ? argv[1] : "/dev/ttyUSB0";
     uint8_t ver[2] = {0x00, 0x02};
-    uint8_t got_ver[2] = {0x00, 0x00};
+    uint8_t can_upgrade = 0U;
     uint16_t crc;
     size_t i;
     int keepalive = 0;
@@ -65,10 +65,13 @@ int main(int argc, char **argv)
     printf("IAP test1 on %s, payload=%u, crc=0x%04X\n",
            dev, PAYLOAD_LEN, crc);
 
-    if (report("start upgrade", iap_start(), NULL, 0U) != 0) {
+    if (report("start upgrade", iap_start(ver, &can_upgrade),
+               &can_upgrade, 1U) != 0) {
         goto out;
     }
-    if (report("get version", iap_version(ver, got_ver), got_ver, 2U) != 0) {
+    if (can_upgrade != 1U) {
+        printf("FAIL %-28s: version %u.%u is not newer\n", "start upgrade",
+               (unsigned)ver[0], (unsigned)ver[1]);
         goto out;
     }
     if (report("file size", iap_size(PAYLOAD_LEN), NULL, 0U) != 0) {

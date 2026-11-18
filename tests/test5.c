@@ -23,12 +23,11 @@
 
 #include "frame_io.h"
 
-#define TEST_CMD         0x7E
 #define TEST_OP_PRESET   0x00U
 #define TEST_OP_STATS    0x01U
 
-#define TEST_DATA_LEN    92U    /* LEN=97，整帧 99 字节 */
-#define TEST_FRAME_SIZE  (FRAME_HDR_LEN + TEST_DATA_LEN + 2U)
+#define TEST_DATA_LEN    92U    /* LEN=97，整帧 97 字节 */
+#define TEST_FRAME_SIZE  (FRAME_OVERHEAD + TEST_DATA_LEN)
 #define TEST_LAP         0xFFFFFF00U
 #define WRAP_MARGIN      4096U
 
@@ -65,7 +64,7 @@ static int run_cmd(uint8_t op, uint32_t lap, uint32_t v[5])
         printf("FAIL cmd 0x%02X: send error\n", op);
         return -1;
     }
-    if (recv_ack(TEST_CMD, NULL, (uint8_t)sizeof(got), NORMAL_TIMEOUT,
+    if (recv_ack(IAP_ACK(TEST_CMD), NULL, (uint8_t)sizeof(got), NORMAL_TIMEOUT,
                  got, NULL) != ACK_OK) {
         printf("FAIL cmd 0x%02X: ack error\n", op);
         return -1;
@@ -82,16 +81,15 @@ static int send_data(uint32_t seq)
     uint8_t d[TEST_DATA_LEN];
     size_t i;
 
-    d[0] = 0x00;
-    d[1] = 0x03;
-    for (i = 2U; i < sizeof(d); i++) {
+    d[0] = TEST_OP_STATS;
+    for (i = 1U; i < sizeof(d); i++) {
         d[i] = (uint8_t)(i + seq);
     }
 
-    if (send_cmd(0x02, d, (uint8_t)sizeof(d)) != 0) {
+    if (send_cmd(TEST_CMD, d, (uint8_t)sizeof(d)) != 0) {
         return -1;
     }
-    return recv_ack(0x02, NULL, 2U, NORMAL_TIMEOUT, NULL, NULL);
+    return recv_ack(IAP_ACK(TEST_CMD), NULL, 20U, NORMAL_TIMEOUT, NULL, NULL);
 }
 
 static void print_stats(const char *tag, const uint32_t v[5])

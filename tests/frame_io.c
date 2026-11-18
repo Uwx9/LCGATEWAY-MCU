@@ -85,26 +85,23 @@ int read_frame(uint8_t *frame, size_t cap, int timeout_ms)
             g_rx_len -= drop;
         }
 
-        while (g_rx_len >= 3U) {
+        while (g_rx_len >= 2U) {
             uint8_t len;
             size_t total;
 
-            if (g_rx[1] != FRAME_RW) {
+            len = g_rx[1];
+            if ((len < FRAME_LEN_MIN) || (len > FRAME_LEN_MAX)) {
                 memmove(g_rx, g_rx + 1, --g_rx_len);
                 continue;
             }
-            len = g_rx[2];
-            if ((len < FRAME_HDR_LEN) || (len > FRAME_LEN_MAX)) {
-                memmove(g_rx, g_rx + 1, --g_rx_len);
-                continue;
-            }
-            total = (size_t)len + 2U;
+            total = (size_t)len;
             if (g_rx_len < total) {
                 break;
             }
 
-            if (((uint16_t)g_rx[len] | ((uint16_t)g_rx[len + 1U] << 8)) ==
-                crc16(g_rx, len)) {
+            if (((uint16_t)g_rx[len - 2U] |
+                 ((uint16_t)g_rx[len - 1U] << 8)) ==
+                crc16(g_rx, (size_t)(len - 2U))) {
                 if (total > cap) {
                     return -1;
                 }
@@ -163,32 +160,30 @@ int read_frame(uint8_t *frame, size_t cap, int timeout_ms)
     }
 }
 
-static size_t build_frame(uint8_t *out, uint8_t sub,
+static size_t build_frame(uint8_t *out, uint8_t cmd,
                           const uint8_t *data, uint8_t data_len)
 {
-    size_t len = FRAME_HDR_LEN + data_len;
+    size_t total = FRAME_OVERHEAD + data_len;
     uint16_t crc;
 
     out[0] = FRAME_HEAD;
-    out[1] = FRAME_RW;
-    out[2] = (uint8_t)len;
-    out[3] = CMD_HOST;
-    out[4] = sub;
+    out[1] = (uint8_t)total;
+    out[2] = cmd;
     if ((data != NULL) && (data_len != 0U)) {
-        memcpy(out + FRAME_HDR_LEN, data, data_len);
+        memcpy(out + FRAME_DATA_OFF, data, data_len);
     }
 
-    crc = crc16(out, len);
-    out[len] = (uint8_t)(crc & 0xFFU);
-    out[len + 1U] = (uint8_t)(crc >> 8);
+    crc = crc16(out, total - 2U);
+    out[total - 2U] = (uint8_t)(crc & 0xFFU);
+    out[total - 1U] = (uint8_t)(crc >> 8);
 
-    return len + 2U;
+    return total;
 }
 
-int send_cmd(uint8_t sub, const uint8_t *data, uint8_t data_len)
+int send_cmd(uint8_t cmd, const uint8_t *data, uint8_t data_len)
 {
     uint8_t frame[FRAME_MAX_SIZE];
-    size_t n = build_frame(frame, sub, data, data_len);
+    size_t n = build_frame(frame, cmd, data, data_len);
 
     return write_all(frame, n);
 }
@@ -236,7 +231,7 @@ void serial_close(void)
     }
 }
 
-int recv_ack(uint8_t sub, const uint8_t *data, uint8_t data_len,
+int recv_ack(uint8_t cmd, const uint8_t *data, uint8_t data_len,
              int timeout_ms, uint8_t *got, uint8_t *got_len)
 {
     uint8_t frame[FRAME_MAX_SIZE];
@@ -246,21 +241,21 @@ int recv_ack(uint8_t sub, const uint8_t *data, uint8_t data_len,
     if (n <= 0) {
         return (n == 0) ? ACK_ERR_TIMEOUT : ACK_ERR_IO;
     }
-    if ((frame[3] != CMD_SLAVE) || (frame[4] != sub)) {
+    if (frame[2] != cmd) {
         return ACK_ERR_CMD;
     }
 
-    len = (uint8_t)(frame[2] - FRAME_HDR_LEN);
+    len = (uint8_t)(frame[1] - FRAME_OVERHEAD);
     if (len != data_len) {
         return ACK_ERR_LEN;
     }
     if ((data != NULL) && (data_len != 0U) &&
-        (memcmp(frame + FRAME_HDR_LEN, data, data_len) != 0)) {
+        (memcmp(frame + FRAME_DATA_OFF, data, data_len) != 0)) {
         return ACK_ERR_DATA;
     }
 
     if (got != NULL) {
-        memcpy(got, frame + FRAME_HDR_LEN, len);
+        memcpy(got, frame + FRAME_DATA_OFF, len);
     }
     if (got_len != NULL) {
         *got_len = len;

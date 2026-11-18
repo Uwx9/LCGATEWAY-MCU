@@ -3,25 +3,24 @@
 #include "frame_io.h"
 #include "iap_flow.h"
 
-static int expect(uint8_t sub, const uint8_t *data, uint8_t data_len, uint8_t *got)
+static int expect(uint8_t cmd, const uint8_t *data, uint8_t data_len, uint8_t *got)
 {
-    return recv_ack(sub, data, data_len, NORMAL_TIMEOUT, got, NULL);
+    return recv_ack(cmd, data, data_len, NORMAL_TIMEOUT, got, NULL);
 }
 
-int iap_start(void)
+int iap_start(const uint8_t ver[2], uint8_t *can_upgrade)
 {
-    if (send_cmd(0x01, NULL, 0U) != 0) {
-        return ACK_ERR_IO;
-    }
-    return expect(0x01, NULL, 0U, NULL);
-}
+    uint8_t got = 0U;
+    int e;
 
-int iap_version(const uint8_t ver[2], uint8_t got[2])
-{
-    if (send_cmd(0x02, ver, 2U) != 0) {
+    if (send_cmd(IAP_CMD_START, ver, 2U) != 0) {
         return ACK_ERR_IO;
     }
-    return expect(0x02, NULL, 2U, got);
+    e = expect(IAP_ACK(IAP_CMD_START), NULL, 1U, &got);
+    if ((e == ACK_OK) && (can_upgrade != NULL)) {
+        *can_upgrade = got;
+    }
+    return e;
 }
 
 int iap_size(uint32_t file_size)
@@ -33,10 +32,10 @@ int iap_size(uint32_t file_size)
         (uint8_t)file_size,
     };
 
-    if (send_cmd(0x03, d, (uint8_t)sizeof(d)) != 0) {
+    if (send_cmd(IAP_CMD_FILE_SIZE, d, (uint8_t)sizeof(d)) != 0) {
         return ACK_ERR_IO;
     }
-    return expect(0x03, d, (uint8_t)sizeof(d), NULL);
+    return expect(IAP_ACK(IAP_CMD_FILE_SIZE), d, (uint8_t)sizeof(d), NULL);
 }
 
 int iap_erase(int *keepalive_count)
@@ -45,7 +44,7 @@ int iap_erase(int *keepalive_count)
     int count = 0;
     int n;
 
-    if (send_cmd(0x04, NULL, 0U) != 0) {
+    if (send_cmd(IAP_CMD_ERASE, NULL, 0U) != 0) {
         return ACK_ERR_IO;
     }
     for (;;) {
@@ -53,17 +52,17 @@ int iap_erase(int *keepalive_count)
         if (n <= 0) {
             return (n == 0) ? ACK_ERR_TIMEOUT : ACK_ERR_IO;
         }
-        if (frame[3] != CMD_SLAVE) {
+        if (frame[2] != IAP_ACK(IAP_CMD_ERASE)) {
             return ACK_ERR_CMD;
         }
-        if (frame[4] == 0x04) {
-            count++;
-            continue;
+        if ((frame[1] - FRAME_OVERHEAD) != 1U) {
+            return ACK_ERR_LEN;
         }
-        if (frame[4] == 0x05) {
+
+        count++;
+        if (frame[FRAME_DATA_OFF] >= 100U) {
             break;
         }
-        return ACK_ERR_CMD;
     }
 
     if (keepalive_count != NULL) {
@@ -85,36 +84,36 @@ int iap_packet(uint16_t id, const uint8_t *data, uint8_t data_len)
         memcpy(d + 2, data, data_len);
     }
 
-    if (send_cmd(0x05, d, (uint8_t)(data_len + 2U)) != 0) {
+    if (send_cmd(IAP_CMD_DATA, d, (uint8_t)(data_len + 2U)) != 0) {
         return ACK_ERR_IO;
     }
-    return expect(0x06, d, 2U, NULL);
+    return expect(IAP_ACK(IAP_CMD_DATA), d, 2U, NULL);
 }
 
 int iap_packet_count(uint16_t count)
 {
     uint8_t d[2] = {(uint8_t)(count >> 8), (uint8_t)count};
 
-    if (send_cmd(0x06, d, 2U) != 0) {
+    if (send_cmd(IAP_CMD_PACKETS, d, 2U) != 0) {
         return ACK_ERR_IO;
     }
-    return expect(0x07, d, 2U, NULL);
+    return expect(IAP_ACK(IAP_CMD_PACKETS), d, 2U, NULL);
 }
 
 int iap_crc(uint16_t crc)
 {
     uint8_t d[2] = {(uint8_t)(crc >> 8), (uint8_t)crc};
 
-    if (send_cmd(0x07, d, 2U) != 0) {
+    if (send_cmd(IAP_CMD_TOTAL_CRC, d, 2U) != 0) {
         return ACK_ERR_IO;
     }
-    return expect(0x08, d, 2U, NULL);
+    return expect(IAP_ACK(IAP_CMD_TOTAL_CRC), d, 2U, NULL);
 }
 
 int iap_finish(void)
 {
-    if (send_cmd(0x08, NULL, 0U) != 0) {
+    if (send_cmd(IAP_CMD_FINISH, NULL, 0U) != 0) {
         return ACK_ERR_IO;
     }
-    return expect(0x09, NULL, 0U, NULL);
+    return expect(IAP_ACK(IAP_CMD_FINISH), NULL, 0U, NULL);
 }

@@ -5,12 +5,23 @@
 #include <stdint.h>
 
 #define FRAME_HEAD      0x40
-#define FRAME_RW        0x06
-#define CMD_HOST        0xF1
-#define CMD_SLAVE       0xF2
-#define FRAME_HDR_LEN   5U
-#define FRAME_LEN_MAX   135U
-#define FRAME_MAX_SIZE  (FRAME_LEN_MAX + 2U)
+#define FRAME_DATA_OFF  3U
+#define FRAME_OVERHEAD  5U   /* HEAD + LEN + CMD + CRC */
+#define FRAME_LEN_MIN   FRAME_OVERHEAD
+#define FRAME_DATA_MAX  130U /* 数据包号 2 字节 + 最多 128 字节固件数据 */
+#define FRAME_LEN_MAX   (FRAME_OVERHEAD + FRAME_DATA_MAX)
+#define FRAME_MAX_SIZE  FRAME_LEN_MAX
+
+/* 主机 IAP 指令，MCU 应答指令 = 主机指令 | 0x80 */
+#define IAP_CMD_START       0x03U
+#define IAP_CMD_FILE_SIZE   0x04U
+#define IAP_CMD_ERASE       0x05U
+#define IAP_CMD_DATA        0x06U
+#define IAP_CMD_PACKETS     0x07U
+#define IAP_CMD_TOTAL_CRC   0x08U
+#define IAP_CMD_FINISH      0x09U
+#define IAP_ACK(cmd)        ((uint8_t)((cmd) | 0x80U))
+#define TEST_CMD            0x7EU
 
 #define RX_BUF_SIZE     512U
 #define NORMAL_TIMEOUT  2000
@@ -30,17 +41,17 @@ void serial_close(void);
 uint16_t crc16(const uint8_t *data, size_t len);
 void dump_hex(const uint8_t *data, size_t len);
 
-int send_cmd(uint8_t sub, const uint8_t *data, uint8_t data_len);
+int send_cmd(uint8_t cmd, const uint8_t *data, uint8_t data_len);
 
 /* 从串口读完整的一帧，返回帧长；0 超时，-1 错误 */
 int read_frame(uint8_t *frame, size_t cap, int timeout_ms);
 
 /*
- * 读一帧应答并校验 CMD/SUB/LEN/DATA，返回 ACK_OK 或 ACK_ERR_*。
+ * 读一帧应答并校验 CMD/LEN/DATA，返回 ACK_OK 或 ACK_ERR_*。
  * data 为 NULL 时不比对内容，data_len 仍为期望长度。
  * got 非 NULL 时带回应答 payload，容量至少为 data_len。
  */
-int recv_ack(uint8_t sub, const uint8_t *data, uint8_t data_len,
+int recv_ack(uint8_t cmd, const uint8_t *data, uint8_t data_len,
              int timeout_ms, uint8_t *got, uint8_t *got_len);
 
 const char *ack_str(int err);

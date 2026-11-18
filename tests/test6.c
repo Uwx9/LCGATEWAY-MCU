@@ -3,7 +3,9 @@
  * 测试方法: 读取 tests/fw0.2.elf，把它落在前 60K 的 PT_LOAD 段拼成完整 app 镜像，
  *           通过 IAP 协议真实下载、擦写并触发交换重启。
  * 测试目标: 旧固件被新固件替换；重启后版本号变为 ELF 里的版本。
- * 测试目的: 端到端验证 0x01~0x08 全流程和 upgrade 的 60K 拷贝。
+ * 测试目的: 端到端验证 0x03~0x09 全流程和 upgrade 的 60K 拷贝。
+ *           新协议没有读版本号指令，重启后用两次“启动升级”的应答
+ *           （目标版本不可升级、目标版本+1 可升级）夹出当前版本。
  *
  * 编译:
  *   cc -std=gnu11 -Wall -Wextra -O2 test6.c frame_io.c iap_flow.c -o test6
@@ -183,6 +185,17 @@ static int report(const char *name, int err, const uint8_t *data, uint8_t data_l
     return 0;
 }
 
+/* 版本号按 major.minor 递增，minor 满 255 后进位 */
+static void next_version(uint8_t v[2])
+{
+    if (v[1] != 0xFFU) {
+        v[1]++;
+    } else {
+        v[1] = 0U;
+        v[0]++;
+    }
+}
+
 /* 超时重发同一包：MCU 对重复包只回 ACK，不会重复写 flash */
 static int send_packet(uint16_t id, const uint8_t *data, uint8_t len)
 {
@@ -213,7 +226,8 @@ int main(int argc, char **argv)
     uint16_t crc;
     uint16_t id;
     uint8_t ver[2];
-    uint8_t got[2];
+    uint8_t next_ver[2];
+    uint8_t can_upgrade = 0U;
     int keepalive = 0;
     int ret = 1;
 
@@ -253,15 +267,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (report("start upgrade", iap_start(), NULL, 0U) != 0) {
+    if (report("start upgrade", iap_start(ver, &can_upgrade),
+               &can_upgrade, 1U) != 0) {
         goto out;
     }
-    if (report("get current version", iap_version(ver, got), got, 2U) != 0) {
+    if (can_upgrade != 1U) {
+        printf("FAIL %-28s: target %u.%u is not newer than running\n",
+               "start upgrade", (unsigned)ver[0], (unsigned)ver[1]);
         goto out;
-    }
-    printf("current version: %u.%u\n", (unsigned)got[0], (unsigned)got[1]);
-    if ((got[0] == ver[0]) && (got[1] == ver[1])) {
-        printf("NOTE: target version equals current version\n");
     }
 
     if (report("file size", iap_size((uint32_t)image_size), NULL, 0U) != 0) {
@@ -306,21 +319,40 @@ int main(int argc, char **argv)
         goto out;
     }
 
-    printf("0x09 received, swapping 60K and resetting, wait %u s...\n",
+    printf("0x89 received, swapping 60K and resetting, wait %u s...\n",
            (unsigned)SWAP_WAIT_S);
     sleep(SWAP_WAIT_S);
 
-    if (report("version after reset", iap_version(ver, got), got, 2U) != 0) {
+    /* 运行版本 >= 目标版本：再启动升级目标版本应被拒绝 */
+    if (report("running >= target", iap_start(ver, &can_upgrade),
+               &can_upgrade, 1U) != 0) {
         goto out;
     }
-    printf("running version: %u.%u\n", (unsigned)got[0], (unsigned)got[1]);
+    if (can_upgrade != 0U) {
+        printf("FAIL %-28s: running version is older than %u.%u\n",
+               "version check", (unsigned)ver[0], (unsigned)ver[1]);
+        goto out;
+    }
 
-    if ((got[0] != ver[0]) || (got[1] != ver[1])) {
-        printf("FAIL %-28s: expect %u.%u, got %u.%u\n", "version check",
-               (unsigned)ver[0], (unsigned)ver[1],
-               (unsigned)got[0], (unsigned)got[1]);
-        goto out;
+    /* 运行版本 < 目标版本+1，和上一条一起夹出运行版本 == 目标版本 */
+    if ((ver[0] != 0xFFU) || (ver[1] != 0xFFU)) {
+        next_ver[0] = ver[0];
+        next_ver[1] = ver[1];
+        next_version(next_ver);
+        if (report("running < next", iap_start(next_ver, &can_upgrade),
+                   &can_upgrade, 1U) != 0) {
+            goto out;
+        }
+        if (can_upgrade != 1U) {
+            printf("FAIL %-28s: running version is >= %u.%u\n",
+                   "version check", (unsigned)next_ver[0],
+                   (unsigned)next_ver[1]);
+            goto out;
+        }
     }
+
+    printf("running version: %u.%u (from start-version checks)\n",
+           (unsigned)ver[0], (unsigned)ver[1]);
 
     printf("TEST6 PASS\n");
     ret = 0;
