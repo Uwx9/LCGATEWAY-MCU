@@ -2,14 +2,14 @@
 # BINS 里的名字直接对应测试目的；新增测试时把目标名加进 BINS
 
 CC     ?= cc
-CFLAGS  = -std=gnu11 -Wall -Wextra -O2
+CFLAGS  = -std=gnu11 -Wall -Wextra -O2 -I../common
 
 BUILD_DIR = build
 BINS    = test_iap_basic test_do_set test_dma_wrap test_iap_upgrade test_boot_status
 TARGETS = $(addprefix $(BUILD_DIR)/,$(BINS))
 
 COMMON  = frame_io.c iap_flow.c
-HEADERS = frame_io.h iap_flow.h
+HEADERS = frame_io.h iap_flow.h ../common/errcode.h
 
 all: $(TARGETS)
 

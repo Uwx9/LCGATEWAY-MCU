@@ -1,5 +1,5 @@
 #include "FreeRTOS.h"
-#include "parse-error.h"
+#include "errcode.h"
 #include "task.h"
 
 #include <stdint.h>
@@ -55,6 +55,8 @@ typedef struct {
 
 static iap_ctx_t s_iap;
 static uint8_t s_tx[32];
+/* 本帧是否已经回过一个正常/诊断 ACK，避免再补 0x8F */
+static uint8_t s_ack_sent;
 
 /* 升级镜像固定写在 stage 区，由 bootloader 拷贝到 app 区 */
 static uint32_t upgrade_base_addr(void)
@@ -127,7 +129,40 @@ static parse_err_t send_ack(uint8_t cmd, const uint8_t *data, uint8_t data_len)
     s_tx[len - 2U] = (uint8_t)(crc & 0xFFU);
     s_tx[len - 1U] = (uint8_t)(crc >> 8);
 
+    s_ack_sent = 1U;
     return tx_dma(s_tx, len);
+}
+
+static uint8_t iap_wire_err(parse_err_t e)
+{
+    /* ERR_IAP_* 已经统一为 IAP_ERR_* 正数，可直接上线 */
+    if ((e >= IAP_ERR_STATE) && (e <= IAP_ERR_COUNT)) {
+        return (uint8_t)e;
+    }
+    return IAP_ERR_OTHER;
+}
+
+/* 0x8F + 原命令 + err_code */
+static parse_err_t send_error_ack(uint8_t cmd, parse_err_t e)
+{
+    uint8_t data[2];
+
+    data[0] = cmd;
+    data[1] = iap_wire_err(e);
+    return send_ack(IAP_ACK_ERR, data, 2U);
+}
+
+void iap_frame_begin(void)
+{
+    s_ack_sent = 0U;
+}
+
+parse_err_t iap_frame_end(uint8_t cmd, parse_err_t e)
+{
+    if ((e != ERR_OK) && (s_ack_sent == 0U)) {
+        (void)send_error_ack(cmd, e);
+    }
+    return e;
 }
 
 static void fmc_clear_flags(void)
@@ -177,7 +212,7 @@ static void flash_write(const uint8_t *data, uint16_t len)
 
 /*
  * 0x01 设置DO, 数据分别为DO编号和状态(0表示拉低，1表示拉高)
- * 返回数据表示设置DO是否成功(0表示成功，非0表示失败)
+ * 成功回 0x81 + 00；失败回 0x8F + 0x01 + IAP_ERR_SET_DO
  */
 parse_err_t ack_set_DO(const uint8_t *frame, uint16_t len)
 {
@@ -191,11 +226,12 @@ parse_err_t ack_set_DO(const uint8_t *frame, uint16_t len)
 
     out = (uint8_t)DO_set(frame[FRAME_DATA_OFF], frame[FRAME_DATA_OFF + 1U]);
 
-    e = send_ack(IAP_ACK(IAP_CMD_SET_DO), &out, 1U);
-    if (e != ERR_OK) {
-        return e;
+    /* 动作失败统一走 0x8F，成功才回 0x81 + result(0) */
+    if (out != 0U) {
+        return ERR_IAP_SET_DO;
     }
-    return (out == 0U) ? ERR_OK : ERR_IAP_SET_DO;
+
+    return send_ack(IAP_ACK(IAP_CMD_SET_DO), &out, 1U);
 }
 
 /*
@@ -211,8 +247,8 @@ parse_err_t ack_read_DI(const uint8_t *frame, uint16_t len)
 }
 
 /*
- * 0x03 启动升级：数据为待升级版本号（major, minor），
- * 只有版本高于当前固件才允许升级，应答 0x83 + 1 字节（1=可以）。
+ * 0x03 启动升级：数据为待升级版本号（major, minor）。
+ * 允许升级回 0x83 + 01；版本不允许回 0x8F + 0x03 + IAP_ERR_VERSION。
  */
 parse_err_t ack_upgrade(const uint8_t *frame, uint16_t len)
 {
@@ -221,7 +257,6 @@ parse_err_t ack_upgrade(const uint8_t *frame, uint16_t len)
     uint8_t new_minor;
     uint8_t can_upgrade;
     uint8_t out;
-    parse_err_t e;
 
     if (data_len != 2U) {
         return ERR_IAP_PARAM;
@@ -234,27 +269,26 @@ parse_err_t ack_upgrade(const uint8_t *frame, uint16_t len)
                    ((new_major == g_fw_version_num.major) &&
                     (new_minor > g_fw_version_num.minor))) ? 1U : 0U;
 
-	//TODO 
-	// ack_upgrade() 无条件 memset，重复/过期 0x03 会破坏正在进行的会话
-	//    src/operats.c:240 不论 can_upgrade 是否为 1 都清零 s_iap；
-	//    如果主机因 ACK 丢失重发 0x03，或误发旧版本 0x03，write_addr 回到 base、have_last=0，
-	// 下一次 0x06 会被当成首包从 base 开始写，镜像整体错位，最后 CRC 失败。
-	//    建议：active 时拒绝新的 0x03，或让 0x03 幂等（不重置已有进度）。
+    //TODO
+    // ack_upgrade() 无条件 memset，重复/过期 0x03 会破坏正在进行的会话
+    //    src/operats.c:240 不论 can_upgrade 是否为 1 都清零 s_iap；
+    //    如果主机因 ACK 丢失重发 0x03，或误发旧版本 0x03，write_addr 回到 base、have_last=0，
+    // 下一次 0x06 会被当成首包从 base 开始写，镜像整体错位，最后 CRC 失败。
+    //    建议：active 时拒绝新的 0x03，或让 0x03 幂等（不重置已有进度）。
     memset(&s_iap, 0, sizeof(s_iap));
-    if (can_upgrade != 0U) {
-        s_iap.active             = 1U;
-        s_iap.base_addr          = upgrade_base_addr();
-        s_iap.write_addr         = s_iap.base_addr;
-        s_iap.new_version_major  = new_major;
-        s_iap.new_version_minor  = new_minor;
+    if (can_upgrade == 0U) {
+        /* 版本不允许升级：只回 0x8F + 0x03 + IAP_ERR_VERSION */
+        return ERR_IAP_VERSION;
     }
 
-    out = can_upgrade;
-    e = send_ack(IAP_ACK(IAP_CMD_START), &out, 1U);
-    if (e != ERR_OK) {
-        return e;
-    }
-    return (can_upgrade != 0U) ? ERR_OK : ERR_IAP_VERSION;
+    s_iap.active             = 1U;
+    s_iap.base_addr          = upgrade_base_addr();
+    s_iap.write_addr         = s_iap.base_addr;
+    s_iap.new_version_major  = new_major;
+    s_iap.new_version_minor  = new_minor;
+
+    out = 1U;
+    return send_ack(IAP_ACK(IAP_CMD_START), &out, 1U);
 }
 
 /*
@@ -283,19 +317,15 @@ parse_err_t ack_file_size(const uint8_t *frame, uint16_t len)
     s_iap.file_size = size;
     /* size != 0 && size <= stage(50K) */
     s_iap.size_ok = ((size != 0U) && (size <= free_upgrade_flash_size())) ? 1U : 0U;
+    if(s_iap.size_ok == 0)
+        return ERR_IAP_SIZE;
 
     /* 从高位开始发 */
-    if (s_iap.size_ok != 0U) {
-        out[0] = (uint8_t)(size >> 24);
-        out[1] = (uint8_t)(size >> 16);
-        out[2] = (uint8_t)(size >> 8);
-        out[3] = (uint8_t)size;
-        e = send_ack(IAP_ACK(IAP_CMD_FILE_SIZE), out, 4U);
-        if (e != ERR_OK)
-            return e;
-    }
-    /* size不对, 返回ERR_IAP_SIZE */
-    return (s_iap.size_ok != 0U) ? ERR_OK : ERR_IAP_SIZE;
+    out[0] = (uint8_t)(size >> 24);
+    out[1] = (uint8_t)(size >> 16);
+    out[2] = (uint8_t)(size >> 8);
+    out[3] = (uint8_t)size;
+    return send_ack(IAP_ACK(IAP_CMD_FILE_SIZE), out, 4U);
 }
 
 /* 0x05 开始擦除：擦除升级暂存区，期间回 0x85 + 擦除进度（0~100） */
@@ -334,6 +364,8 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
         if (fmc_page_erase(addr) != FMC_READY) {
             fmc_lock();
             s_iap.flash_error = 1U;
+            /* 已经回过擦除进度，必须显式补一帧错误应答 */
+            (void)send_error_ack(IAP_CMD_ERASE, ERR_IAP_FLASH);
             return ERR_IAP_FLASH;
         }
         fmc_lock();
@@ -359,9 +391,9 @@ parse_err_t ack_eraseing(const uint8_t *frame, uint16_t len)
     s_iap.have_last    = 0U;
     s_iap.word         = 0U;
     s_iap.word_len     = 0U;
-	s_iap.crc_ok	   = 0U;
-	s_iap.crc		   = 0U;
-	s_iap.flash_error  = 0U;
+    s_iap.crc_ok	   = 0U;
+    s_iap.crc		   = 0U;
+    s_iap.flash_error  = 0U;
 
     return ERR_OK;
 }
@@ -373,7 +405,6 @@ parse_err_t ack_packet_id(const uint8_t *frame, uint16_t len)
     uint16_t id;
     uint16_t payload_len;
     uint8_t out[2];
-    parse_err_t e;
 
     if ((s_iap.active == 0U) || (s_iap.erased == 0U)) {
         return ERR_IAP_STATE;
@@ -392,8 +423,8 @@ parse_err_t ack_packet_id(const uint8_t *frame, uint16_t len)
 
     id = (uint16_t)(((uint16_t)frame[FRAME_DATA_OFF] << 8) |
                     frame[FRAME_DATA_OFF + 1U]);
-	if (s_iap.have_last == 0 && id != 0)
-		return ERR_IAP_SEQ;
+    if (s_iap.have_last == 0 && id != 0)
+        return ERR_IAP_SEQ;
 
     /* 重发的包只回 ACK，不重复写 flash */
     if ((s_iap.have_last != 0U) && (id == s_iap.last_packet_id)) {
@@ -402,12 +433,9 @@ parse_err_t ack_packet_id(const uint8_t *frame, uint16_t len)
         return send_ack(IAP_ACK(IAP_CMD_DATA), out, 2U);
     }
 
-    /* 包号不连续：回路最后收下的包号，让主机从那里重发 */
+    /* 包号不连续：统一走 0x8F + 0x06 + IAP_ERR_SEQ */
     if ((s_iap.have_last != 0U) && (id != (uint16_t)(s_iap.last_packet_id + 1U))) {
-        out[0] = (uint8_t)(s_iap.last_packet_id >> 8);
-        out[1] = (uint8_t)(s_iap.last_packet_id & 0xFFU);
-        e = send_ack(IAP_ACK(IAP_CMD_DATA), out, 2U);
-        return (e != ERR_OK) ? e : ERR_IAP_SEQ;
+        return ERR_IAP_SEQ;
     }
 
     if ((s_iap.prog_bytes + payload_len) > s_iap.file_size) {
@@ -428,17 +456,18 @@ parse_err_t ack_packet_id(const uint8_t *frame, uint16_t len)
     }
     fmc_lock();
 
+    /* flash 失败不能再回“包号正确”的 ACK，返回错误让上层发 0x8F */
+    if (s_iap.flash_error != 0U) {
+        return ERR_IAP_FLASH;
+    }
+
     s_iap.recv_packets++;
     s_iap.last_packet_id = id;
     s_iap.have_last = 1U;
 
     out[0] = frame[FRAME_DATA_OFF];
     out[1] = frame[FRAME_DATA_OFF + 1U];
-    e = send_ack(IAP_ACK(IAP_CMD_DATA), out, 2U);
-    if (e != ERR_OK) {
-        return e;
-    }
-    return (s_iap.flash_error != 0U) ? ERR_IAP_FLASH : ERR_OK;
+    return send_ack(IAP_ACK(IAP_CMD_DATA), out, 2U);
 }
 
 /* 0x07 总数据包数：记录主机包数，回 0x87 + 实际收到的包数 */
@@ -446,7 +475,6 @@ parse_err_t ack_number_of_packets(const uint8_t *frame, uint16_t len)
 {
     uint8_t data_len = (uint8_t)(len - FRAME_OVERHEAD);
     uint8_t out[2];
-    parse_err_t e;
 
     if (s_iap.active == 0U) {
         return ERR_IAP_STATE;
@@ -457,14 +485,13 @@ parse_err_t ack_number_of_packets(const uint8_t *frame, uint16_t len)
 
     s_iap.declared_packets = (uint16_t)(((uint16_t)frame[FRAME_DATA_OFF] << 8) |
                                         frame[FRAME_DATA_OFF + 1U]);
+    if (s_iap.recv_packets != s_iap.declared_packets) {
+        return ERR_IAP_COUNT;
+    }
 
     out[0] = (uint8_t)(s_iap.recv_packets >> 8);
     out[1] = (uint8_t)(s_iap.recv_packets & 0xFFU);
-    e = send_ack(IAP_ACK(IAP_CMD_PACKETS), out, 2U);
-    if (e != ERR_OK) {
-        return e;
-    }
-    return (s_iap.recv_packets == s_iap.declared_packets) ? ERR_OK : ERR_IAP_CRC;
+    return send_ack(IAP_ACK(IAP_CMD_PACKETS), out, 2U);
 }
 
 /* 0x08 总数据校验：对写入 flash 的整个文件算 CRC16，回 0x88 + 计算值 */
@@ -474,7 +501,6 @@ parse_err_t ack_all_data_crc(const uint8_t *frame, uint16_t len)
     uint16_t expected;
     uint16_t calc;
     uint8_t out[2];
-    parse_err_t e;
 
     if (s_iap.active == 0U) {
         return ERR_IAP_STATE;
@@ -500,16 +526,16 @@ parse_err_t ack_all_data_crc(const uint8_t *frame, uint16_t len)
                     (s_iap.prog_bytes == s_iap.file_size) &&
                     (s_iap.flash_error == 0U)) ? 1U : 0U;
 
-    out[0] = (uint8_t)(calc >> 8);
-    out[1] = (uint8_t)(calc & 0xFFU);
-    e = send_ack(IAP_ACK(IAP_CMD_TOTAL_CRC), out, 2U);
-    if (e != ERR_OK) {
-        return e;
-    }
     if (s_iap.flash_error != 0U) {
         return ERR_IAP_FLASH;
     }
-    return (s_iap.crc_ok != 0U) ? ERR_OK : ERR_IAP_CRC;
+    if (s_iap.crc_ok == 0U) {
+        return ERR_IAP_CRC;
+    }
+
+    out[0] = (uint8_t)(calc >> 8);
+    out[1] = (uint8_t)(calc & 0xFFU);
+    return send_ack(IAP_ACK(IAP_CMD_TOTAL_CRC), out, 2U);
 }
 
 static int app_meta_valid(const update_meta_t *m)
@@ -614,7 +640,7 @@ parse_err_t ready_rebot(const uint8_t *frame, uint16_t len)
     }
     if ((s_iap.declared_packets != 0U) &&
         (s_iap.recv_packets != s_iap.declared_packets)) {
-        return ERR_IAP_CRC;
+        return ERR_IAP_COUNT;
     }
 
     /* 记录当前正在运行的 app，stage 丢失时 boot 可以校验并回退 */

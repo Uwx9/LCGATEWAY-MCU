@@ -48,7 +48,7 @@ else
 endif
 
 ARCH = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
-INC = -I$(SRCDIR) -I$(FW)/CMSIS -I$(FW)/CMSIS/GD/GD32F3x0/Include \
+INC = -I$(SRCDIR) -I../common -I$(FW)/CMSIS -I$(FW)/CMSIS/GD/GD32F3x0/Include \
    -I$(FW)/GD32F3x0_standard_peripheral/Include -I$(RTOS)/include \
    -I$(RTT)/
 

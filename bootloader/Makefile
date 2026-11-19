@@ -23,6 +23,7 @@ OBJS     = $(patsubst %.c,$(BUILD)/obj/%.o,$(SRCS)) \
 
 ARCH     = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
 INC      = -Isrc \
+           -I../common \
            -IFirmware/CMSIS \
            -IFirmware/CMSIS/GD/GD32F3x0/Include \
            -IFirmware/GD32F3x0_standard_peripheral/Include

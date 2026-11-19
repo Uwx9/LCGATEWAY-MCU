@@ -23,3 +23,12 @@ USART RX --- PA10
   协议查询：0x0A -> 0x8A 01 表示 bootloader 下载模式；app 不实现 0x0A。
   主机工具：tests/build/test_boot_status /dev/ttyUSB0
 
+语义错误（帧头部 CRC 正确但命令不能执行）统一回：
+  0x8F + 原命令 + err_code
+  err_code 使用 common/errcode.h 的 IAP_ERR_* 正数：
+    1=STATE 2=PARAM 3=SIZE 4=SEQ 5=FLASH 6=CRC 7=VERSION
+    8=TX 9=SET_DO 10=READ_DI 11=COUNT 15=OTHER
+  所有语义失败（SET_DO、启动升级版本被拒、包号不连续、
+  包数不匹配、整包 CRC 不匹配）都只回 0x8F。
+  成功路径才回正常 ACK；host 侧把 SET_DO/启动升级的 0x8F
+  映射回 result=1 / can_upgrade=0。

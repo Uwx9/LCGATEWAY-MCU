@@ -2,7 +2,7 @@
 #define PARSE_H
 
 #include <stdint.h>
-#include "parse-error.h"
+#include "errcode.h"
 
 /* DMA 回绕测试（tests/test_dma_wrap.c）的固件测试命令（0x7E）；生产固件注释掉这一行 */
 #define TEST5
@@ -16,7 +16,7 @@ uint32_t parse_test_preset(uint32_t lap);
 void parse_test_counters(uint32_t out[5]);
 #endif
 
-#define FRAME_HEAD      0x40
+#define FRAME_HEAD      IAP_FRAME_HEAD
 
 /*
  * 帧格式（LEN 为 1 字节；版本/大小/包号/总校验等多字节数据大端，
@@ -31,23 +31,13 @@ void parse_test_counters(uint32_t out[5]);
  * LEN = 5 + 数据字节数，范围 5..135（数据包最多 2+128 字节）。
  * CRC16 覆盖 [0, LEN-3]，即从 HEAD 到最后一个数据字节。
  */
-#define FRAME_DATA_OFF  3U
-#define FRAME_OVERHEAD  5U   /* HEAD + LEN + CMD + CRC */
-#define FRAME_LEN_MIN   FRAME_OVERHEAD
-#define FRAME_DATA_MAX  130U /* 数据包号 2 字节 + 最多 128 字节固件数据 */
-#define FRAME_LEN_MAX   (FRAME_OVERHEAD + FRAME_DATA_MAX)	/* 135 */
+#define FRAME_DATA_OFF  IAP_FRAME_DATA_OFF
+#define FRAME_OVERHEAD  IAP_FRAME_OVERHEAD
+#define FRAME_LEN_MIN   IAP_FRAME_LEN_MIN
+#define FRAME_DATA_MAX  IAP_FRAME_DATA_MAX
+#define FRAME_LEN_MAX   IAP_FRAME_LEN_MAX
 
-/* 主机指令，MCU 应答指令 = 主机指令 | 0x80 */
-#define IAP_CMD_SET_DO	    0x01U
-#define IAP_CMD_READ_DI	    0x02U
-#define IAP_CMD_START       0x03U
-#define IAP_CMD_FILE_SIZE   0x04U
-#define IAP_CMD_ERASE       0x05U
-#define IAP_CMD_DATA        0x06U
-#define IAP_CMD_PACKETS     0x07U
-#define IAP_CMD_TOTAL_CRC   0x08U
-#define IAP_CMD_FINISH      0x09U
-#define IAP_ACK(cmd)        ((uint8_t)((cmd) | 0x80U))
+/* 主机指令、IAP_ACK()、IAP_ACK_ERR 及错误码见 common/errcode.h */
 
 /* RXBUF_SIZE 必须为2的n次方 */
 #define RXBUF_SIZE      256U

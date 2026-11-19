@@ -1,7 +1,7 @@
 #include "FreeRTOS.h"
 #include "gd32f3x0.h"
 #include "parse.h"
-#include "parse-error.h"
+#include "errcode.h"
 #include "operats.h"
 #include "task.h"
 #include <stdint.h>
@@ -310,6 +310,8 @@ parse_err_t on_frame(const uint8_t *frame, uint16_t len)
     parse_err_t e = ERR_OK;
     uint8_t cmd = frame[2];
 
+    iap_frame_begin();
+
 #ifdef DEBUG
     configASSERT(frame[0] == FRAME_HEAD);
     configASSERT(is_host_cmd(cmd) != 0U);
@@ -352,5 +354,6 @@ parse_err_t on_frame(const uint8_t *frame, uint16_t len)
     }
 
 out:
-    return e;
+    /* 如果是除开send错误的任意错误 会回复一个错误帧,并返回错误码 */
+    return iap_frame_end(cmd, e);
 }

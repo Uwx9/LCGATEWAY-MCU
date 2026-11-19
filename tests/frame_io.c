@@ -15,6 +15,8 @@
 static int g_fd = -1;
 static uint8_t g_rx[RX_BUF_SIZE];
 static size_t g_rx_len;
+static uint8_t g_dev_err_cmd;
+static uint8_t g_dev_err_code;
 
 uint16_t crc16(const uint8_t *data, size_t len)
 {
@@ -241,6 +243,9 @@ int recv_ack(uint8_t cmd, const uint8_t *data, uint8_t data_len,
     if (n <= 0) {
         return (n == 0) ? ACK_ERR_TIMEOUT : ACK_ERR_IO;
     }
+    if (ack_is_error(frame, n)) {
+        return ACK_ERR_DEVICE;
+    }
     if (frame[2] != cmd) {
         return ACK_ERR_CMD;
     }
@@ -263,6 +268,23 @@ int recv_ack(uint8_t cmd, const uint8_t *data, uint8_t data_len,
     return ACK_OK;
 }
 
+int ack_is_error(const uint8_t *frame, int len)
+{
+    if ((len == (int)(FRAME_OVERHEAD + 2U)) && (frame[2] == IAP_ACK_ERR)) {
+        g_dev_err_cmd = frame[FRAME_DATA_OFF];
+        g_dev_err_code = frame[FRAME_DATA_OFF + 1U];
+        fprintf(stderr, "device error: cmd=0x%02X code=%u\n",
+                g_dev_err_cmd, g_dev_err_code);
+        return 1;
+    }
+    return 0;
+}
+
+uint8_t ack_last_err_code(void)
+{
+    return g_dev_err_code;
+}
+
 const char *ack_str(int err)
 {
     switch (err) {
@@ -278,6 +300,8 @@ const char *ack_str(int err)
         return "len mismatch";
     case ACK_ERR_DATA:
         return "data mismatch";
+    case ACK_ERR_DEVICE:
+        return "device error";
     default:
         return "unknown error";
     }

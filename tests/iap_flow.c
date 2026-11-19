@@ -18,6 +18,11 @@ int iap_set_do(uint8_t id, uint8_t status, uint8_t *result)
         return ACK_ERR_IO;
     }
     e = expect(IAP_ACK(IAP_CMD_SET_DO), NULL, 1U, &got);
+    if ((e == ACK_ERR_DEVICE) && (ack_last_err_code() == IAP_ERR_SET_DO)) {
+        /* 设备统一用 0x8F 表达动作失败，host API 仍返回 result=1 */
+        got = 1U;
+        e = ACK_OK;
+    }
     if ((e == ACK_OK) && (result != NULL)) {
         *result = got;
     }
@@ -33,6 +38,11 @@ int iap_start(const uint8_t ver[2], uint8_t *can_upgrade)
         return ACK_ERR_IO;
     }
     e = expect(IAP_ACK(IAP_CMD_START), NULL, 1U, &got);
+    if ((e == ACK_ERR_DEVICE) && (ack_last_err_code() == IAP_ERR_VERSION)) {
+        /* 版本被拒也走 0x8F，host API 仍返回 can_upgrade=0 */
+        got = 0U;
+        e = ACK_OK;
+    }
     if ((e == ACK_OK) && (can_upgrade != NULL)) {
         *can_upgrade = got;
     }
@@ -67,6 +77,9 @@ int iap_erase(int *keepalive_count)
         n = read_frame(frame, sizeof(frame), NORMAL_TIMEOUT);
         if (n <= 0) {
             return (n == 0) ? ACK_ERR_TIMEOUT : ACK_ERR_IO;
+        }
+        if (ack_is_error(frame, n)) {
+            return ACK_ERR_DEVICE;
         }
         if (frame[2] != IAP_ACK(IAP_CMD_ERASE)) {
             return ACK_ERR_CMD;
