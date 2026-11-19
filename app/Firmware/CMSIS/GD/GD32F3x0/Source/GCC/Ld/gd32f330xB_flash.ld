@@ -28,8 +28,8 @@
 /* memory map */
 MEMORY
 {
-  /* app 从 0x08002000 开始；0x08000000~0x08001FFF 留给 bootloader */
-  FLASH    (rx): ORIGIN = 0x08002000, LENGTH = 60K
+  /* app 从 0x08007000 开始；0x08000000~0x08006FFF 留给 bootloader（含 metadata） */
+  FLASH    (rx): ORIGIN = 0x08007000, LENGTH = 50K
   RAM      (xrw): ORIGIN = 0x20000000, LENGTH = 16K
 }
 
@@ -166,9 +166,9 @@ SECTIONS
     _edata = .;
   } > RAM AT> FLASH
 
-  /* 当前固件必须整体落在 app 区 [0x08002000, 0x08011000) */
+  /* 当前固件必须整体落在 app 区 [0x08007000, 0x08013800) */
   ASSERT(_sidata + SIZEOF(.data) <= ORIGIN(FLASH) + LENGTH(FLASH),
-         "firmware exceeds the 60KB app region")
+         "firmware exceeds the 50KB app region")
 
   /* provide some necessary symbols for uninitialized data */
   . = ALIGN(4);

@@ -52,7 +52,7 @@ INC = -I$(SRCDIR) -I$(FW)/CMSIS -I$(FW)/CMSIS/GD/GD32F3x0/Include \
    -I$(FW)/GD32F3x0_standard_peripheral/Include -I$(RTOS)/include \
    -I$(RTT)/
 
-CFLAGS  = -std=gnu11 $(ARCH) -D$(CHIP) -DVECT_TAB_OFFSET=0x2000U $(CFG_DEFS) $(OPT) \
+CFLAGS  = -std=gnu11 $(ARCH) -D$(CHIP) -DVECT_TAB_OFFSET=0x7000U $(CFG_DEFS) $(OPT) \
           -Wall -ffunction-sections  -fno-strict-aliasing -fdata-sections $(INC)
 LDFLAGS = $(ARCH) -T$(LDSCRIPT) -Wl,--gc-sections \
           -Wl,-Map=$(EXE).map --specs=nano.specs \

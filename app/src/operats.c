@@ -9,13 +9,14 @@
 
 #include "DIDO.h"
 #include "layout.h"
+#include "memmap.h"
 #include "operats.h"
 #include "parse.h"
 #include "version.h"
 
 #define USART0_TDATA_ADDRESS   ((uint32_t)&USART_TDATA(USART0))
 
-#define META_CRC_LEN           20U
+#define META_CRC_LEN           28U
 #define DATA_PACKET_MAX        128U
 #define ERASE_ACK_PAGES        8U      /* 擦除时按页数近似 500ms 发一次“擦除中” */
 #define TX_TIMEOUT_MS          100U
@@ -33,7 +34,7 @@ __IO FlagStatus g_transfer_complete = RESET;
  */
 typedef struct {
     uint8_t  active;			// 升级会话是否激活：1=正在进行升级，0=空闲/无升级任务
-    uint8_t  size_ok;			// 固件长度校验标记：1=文件大小合法且不超过 stage(60K)；0=未校验/超限
+    uint8_t  size_ok;			// 固件长度校验标记：1=文件大小合法且不超过 stage(50K)；0=未校验/超限
     uint8_t  erased;			// 升级分区擦除标记：1=目标Flash分区已经完成擦除；0=未擦除
     uint8_t  crc_ok;			// CRC校验结果标记：1=整包固件CRC校验通过；0=校验失败/还没校验
     uint8_t  flash_error;		// Flash 擦除或编程失败标记：1=本次升级中发生过 flash 操作错误；0=正常
@@ -280,7 +281,7 @@ parse_err_t ack_file_size(const uint8_t *frame, uint16_t len)
            (uint32_t)frame[FRAME_DATA_OFF + 3U];
 
     s_iap.file_size = size;
-    /* size != 0 && size <= stage(60K) */
+    /* size != 0 && size <= stage(50K) */
     s_iap.size_ok = ((size != 0U) && (size <= free_upgrade_flash_size())) ? 1U : 0U;
 
     /* 从高位开始发 */
@@ -516,7 +517,7 @@ static int app_meta_valid(const update_meta_t *m)
     if (m->magic != UPDATE_MAGIC) {
         return 0;
     }
-    if (m->size > APP_SIZE) {
+    if ((m->size == 0U) || (m->size > APP_SIZE)) {
         return 0;
     }
     if ((m->state != UPDATE_STATE_REQUEST) &&
@@ -549,7 +550,8 @@ static const update_meta_t *app_meta_active(void)
     return 0;
 }
 
-static int app_meta_write(uint32_t state, uint32_t size, uint32_t crc)
+static int app_meta_write(uint32_t state, uint32_t size, uint32_t crc,
+                          uint32_t prev_size, uint32_t prev_crc)
 {
     const update_meta_t *active = app_meta_active();
     update_meta_t m;
@@ -567,6 +569,8 @@ static int app_meta_write(uint32_t state, uint32_t size, uint32_t crc)
     m.state = state;
     m.size = size;
     m.crc = crc;
+    m.prev_size = prev_size;
+    m.prev_crc = prev_crc;
     m.meta_crc = CrcValueCalc((const uint8_t *)&m, META_CRC_LEN);
 
     fmc_unlock();
@@ -575,7 +579,7 @@ static int app_meta_write(uint32_t state, uint32_t size, uint32_t crc)
         fmc_lock();
         return -1;
     }
-    for (i = 0U; i < 6U; i++) {
+    for (i = 0U; i < (sizeof(m) / sizeof(uint32_t)); i++) {
         if (fmc_word_program(addr + 4U * i, ((const uint32_t *)&m)[i]) != FMC_READY) {
             fmc_lock();
             return -1;
@@ -590,6 +594,8 @@ static int app_meta_write(uint32_t state, uint32_t size, uint32_t crc)
 parse_err_t ready_rebot(const uint8_t *frame, uint16_t len)
 {
     parse_err_t e;
+    uint32_t prev_size;
+    uint32_t prev_crc;
 
     (void)frame;
     (void)len;
@@ -611,7 +617,12 @@ parse_err_t ready_rebot(const uint8_t *frame, uint16_t len)
         return ERR_IAP_CRC;
     }
 
-    if (app_meta_write(UPDATE_STATE_REQUEST, s_iap.file_size, s_iap.crc) != 0) {
+    /* 记录当前正在运行的 app，stage 丢失时 boot 可以校验并回退 */
+    prev_size = memmap_image_size();
+    prev_crc = CrcValueCalc((const uint8_t *)memmap_flash_start(), prev_size);
+
+    if (app_meta_write(UPDATE_STATE_REQUEST, s_iap.file_size, s_iap.crc,
+                       prev_size, prev_crc) != 0) {
         return ERR_IAP_FLASH;
     }
 

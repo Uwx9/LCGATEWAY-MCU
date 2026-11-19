@@ -5,24 +5,24 @@
 
 /*
  * GD32F330CB 128K flash:
- *   0x08000000 + 8K   bootloader（前 6K 代码，后 2K metadata A/B）
- *   0x08002000 + 60K  app
- *   0x08011000 + 60K  stage
+ *   0x08000000 + 28K  bootloader（前 26K 代码，后 2K metadata A/B）
+ *   0x08007000 + 50K  app
+ *   0x08013800 + 50K  stage
  */
 #define BOOT_BASE        0x08000000U
-#define BOOT_SIZE        (8U * 1024U)
-#define BOOT_CODE_SIZE   (6U * 1024U)
+#define BOOT_SIZE        (28U * 1024U)
+#define BOOT_CODE_SIZE   (26U * 1024U)
 
-#define META_A_ADDR      0x08001800U
-#define META_B_ADDR      0x08001C00U
+#define META_A_ADDR      0x08006800U
+#define META_B_ADDR      0x08006C00U
 #define META_PAGE_SIZE   1024U
 
-#define APP_BASE         0x08002000U
-#define APP_SIZE         (60U * 1024U)
+#define APP_BASE         0x08007000U
+#define APP_SIZE         (50U * 1024U)
 #define APP_END          (APP_BASE + APP_SIZE)
 
-#define STAGE_BASE       0x08011000U
-#define STAGE_SIZE       (60U * 1024U)
+#define STAGE_BASE       0x08013800U
+#define STAGE_SIZE       (50U * 1024U)
 #define STAGE_END        (STAGE_BASE + STAGE_SIZE)
 
 #define FLASH_PAGE_SIZE  1024U
@@ -42,6 +42,9 @@ typedef struct {
     uint32_t state;
     uint32_t size;
     uint32_t crc;
+    /* 发起本次升级时正在运行的 app 的镜像信息，stage 丢失时用于回退 */
+    uint32_t prev_size;
+    uint32_t prev_crc;
     uint32_t meta_crc;
 } update_meta_t;
 
