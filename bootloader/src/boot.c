@@ -1,10 +1,12 @@
 #include <stdint.h>
 
 #include "gd32f3x0.h"
+#include "boot_flash.h"
 #include "crc16.h"
+#include "download.h"
 #include "layout.h"
 
-#define META_CRC_LEN  20U
+#define META_CRC_LEN  28U
 
 static void boot_fmc_flags_clear(void)
 {
@@ -19,7 +21,7 @@ static int boot_fmc_wait(void)
     return ((FMC_STAT & (FMC_STAT_PGERR | FMC_STAT_WPERR)) != 0U) ? -1 : 0;
 }
 
-static void boot_fmc_unlock(void)
+void boot_fmc_unlock(void)
 {
     if ((FMC_CTL & FMC_CTL_LK) != 0U) {
         FMC_KEY = 0x45670123U;
@@ -27,12 +29,12 @@ static void boot_fmc_unlock(void)
     }
 }
 
-static void boot_fmc_lock(void)
+void boot_fmc_lock(void)
 {
     FMC_CTL |= FMC_CTL_LK;
 }
 
-static int boot_fmc_erase_page(uint32_t addr)
+int boot_fmc_erase_page(uint32_t addr)
 {
     int ret;
 
@@ -52,7 +54,7 @@ static int boot_fmc_erase_page(uint32_t addr)
     return ret;
 }
 
-static int boot_fmc_program_word(uint32_t addr, uint32_t data)
+int boot_fmc_program_word(uint32_t addr, uint32_t data)
 {
     int ret;
 
@@ -74,7 +76,7 @@ static int meta_valid(const update_meta_t *m)
     if (m->magic != UPDATE_MAGIC) {
         return 0;
     }
-    if (m->size > APP_SIZE) {
+    if ((m->size == 0U) || (m->size > APP_SIZE)) {
         return 0;
     }
     if ((m->state != UPDATE_STATE_REQUEST) &&
@@ -107,7 +109,7 @@ static const update_meta_t *meta_active(void)
     return 0;
 }
 
-static int meta_write(uint32_t state, uint32_t size, uint32_t crc)
+int boot_meta_write(uint32_t state, uint32_t size, uint32_t crc)
 {
     const update_meta_t *active = meta_active();
     update_meta_t m;
@@ -125,6 +127,8 @@ static int meta_write(uint32_t state, uint32_t size, uint32_t crc)
     m.state = state;
     m.size = size;
     m.crc = crc;
+    m.prev_size = (active != 0) ? active->prev_size : 0U;
+    m.prev_crc = (active != 0) ? active->prev_crc : 0U;
     m.meta_crc = crc16((const uint8_t *)&m, META_CRC_LEN);
 
     boot_fmc_unlock();
@@ -132,7 +136,7 @@ static int meta_write(uint32_t state, uint32_t size, uint32_t crc)
         boot_fmc_lock();
         return -1;
     }
-    for (i = 0U; i < 6U; i++) {
+    for (i = 0U; i < (sizeof(m) / sizeof(uint32_t)); i++) {
         if (boot_fmc_program_word(addr + 4U * i, ((const uint32_t *)&m)[i]) != 0) {
             boot_fmc_lock();
             return -1;
@@ -158,6 +162,21 @@ static int app_vector_valid(void)
     return 1;
 }
 
+/* 用镜像自带的 size/crc 校验 app 是否完整，比只看向量表可靠 */
+static int app_crc_valid(uint32_t size, uint32_t crc)
+{
+    if ((size == 0U) || (size > APP_SIZE) || (!app_vector_valid())) {
+        return 0;
+    }
+
+    return (crc16((const uint8_t *)APP_BASE, size) == crc) ? 1 : 0;
+}
+
+static int meta_has_prev(const update_meta_t *m)
+{
+    return ((m->prev_size != 0U) && (m->prev_size <= APP_SIZE)) ? 1 : 0;
+}
+
 static void jump_app(void) __attribute__((noreturn));
 static void jump_app(void)
 {
@@ -166,8 +185,7 @@ static void jump_app(void)
     unsigned i;
 
     if (!app_vector_valid()) {
-        for (;;) {
-        }
+        download_mode();
     }
 
     __disable_irq();
@@ -230,70 +248,90 @@ int main(void)
     m = meta_active();
 
     if (m != 0 && m->state == UPDATE_STATE_REQUEST) {
-        if ((m->size == 0U) || (m->size > APP_SIZE) ||
-            (crc16((const uint8_t *)STAGE_BASE, m->size) != m->crc)) {
-            (void)meta_write(UPDATE_STATE_FAILED, m->size, m->crc);
+        if (crc16((const uint8_t *)STAGE_BASE, m->size) != m->crc) {
+            /* stage 不可用：先按 prev 记录的 CRC 确认原 app 是否完整 */
+            if (meta_has_prev(m)) {
+                if (app_crc_valid(m->prev_size, m->prev_crc)) {
+                    (void)boot_meta_write(UPDATE_STATE_VALID,
+                                          m->prev_size, m->prev_crc);
+                    jump_app();
+                }
+                /* 原 app 也校验不过，进下载 */
+                download_mode();
+            }
+
+            /* 旧格式记录没有 prev：维持原来的向量表回退 */
+            (void)boot_meta_write(UPDATE_STATE_FAILED, m->size, m->crc);
             if (app_vector_valid()) {
                 jump_app();
             }
-            for (;;) {
-            }
+            download_mode();
         }
 
         if (crc16((const uint8_t *)APP_BASE, m->size) == m->crc) {
-            (void)meta_write(UPDATE_STATE_VALID, m->size, m->crc);
+            (void)boot_meta_write(UPDATE_STATE_VALID, m->size, m->crc);
             NVIC_SystemReset();
         }
 
-        if (meta_write(UPDATE_STATE_COPYING, m->size, m->crc) != 0) {
+        if (boot_meta_write(UPDATE_STATE_COPYING, m->size, m->crc) != 0) {
             if (app_vector_valid()) {
                 jump_app();
             }
-            for (;;) {
-            }
+            download_mode();
         }
         m = meta_active();
     }
 
     if (m != 0 && m->state == UPDATE_STATE_COPYING) {
-        if ((m->size == 0U) || (m->size > APP_SIZE) ||
-            (crc16((const uint8_t *)STAGE_BASE, m->size) != m->crc)) {
-            /* stage 不完整：保持 COPYING，下次上电重试；不要跳 partial app */
-            for (;;) {
-            }
+        if (app_vector_valid() &&
+            (crc16((const uint8_t *)APP_BASE, m->size) == m->crc)) {
+            (void)boot_meta_write(UPDATE_STATE_VALID, m->size, m->crc);
+            NVIC_SystemReset();
         }
 
-        if (crc16((const uint8_t *)APP_BASE, m->size) == m->crc) {
-            (void)meta_write(UPDATE_STATE_VALID, m->size, m->crc);
-            NVIC_SystemReset();
+        if (crc16((const uint8_t *)STAGE_BASE, m->size) != m->crc) {
+            /* stage 不完整：如果原 app 的 CRC 仍对得上，就回去跑原 app */
+            if (meta_has_prev(m) &&
+                app_crc_valid(m->prev_size, m->prev_crc)) {
+                (void)boot_meta_write(UPDATE_STATE_VALID,
+                                      m->prev_size, m->prev_crc);
+                jump_app();
+            }
+            download_mode();
         }
 
         if (copy_app(m->size, m->crc) == 0) {
-            (void)meta_write(UPDATE_STATE_VALID, m->size, m->crc);
+            (void)boot_meta_write(UPDATE_STATE_VALID, m->size, m->crc);
             NVIC_SystemReset();
         }
 
-        /* 拷贝失败保持 COPYING，下次上电重试；不要跳 partial app */
-        for (;;) {
+        /* 拷贝失败：app 已被擦写；若原 app 仍完整则回退，否则进下载 */
+        if (meta_has_prev(m) &&
+            app_crc_valid(m->prev_size, m->prev_crc)) {
+            (void)boot_meta_write(UPDATE_STATE_VALID,
+                                  m->prev_size, m->prev_crc);
+            jump_app();
         }
+        download_mode();
     }
 
     if (m != 0 && m->state == UPDATE_STATE_VALID) {
-        if (crc16((const uint8_t *)APP_BASE, m->size) == m->crc) {
+        if (app_vector_valid() &&
+            (crc16((const uint8_t *)APP_BASE, m->size) == m->crc)) {
             jump_app();
         }
         if (crc16((const uint8_t *)STAGE_BASE, m->size) == m->crc) {
-            (void)meta_write(UPDATE_STATE_COPYING, m->size, m->crc);
+            (void)boot_meta_write(UPDATE_STATE_COPYING, m->size, m->crc);
             NVIC_SystemReset();
         }
-        for (;;) {
-        }
+        /* app 校验失败且 stage 不可用：无法启动，进下载 */
+        download_mode();
     }
 
+    /* 没有 metadata 或状态是 FAILED：只做向量表检查 */
     if (app_vector_valid()) {
         jump_app();
     }
 
-    for (;;) {
-    }
+    download_mode();
 }

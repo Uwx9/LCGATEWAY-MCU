@@ -11,8 +11,12 @@ LDSCRIPT = boot_flash.ld
 STARTUP  = Firmware/CMSIS/GD/GD32F3x0/Source/GCC/startup_gd32f3x0.S
 SRCS     = src/boot.c \
            src/crc16.c \
+           src/download.c \
            Firmware/CMSIS/GD/GD32F3x0/Source/system_gd32f3x0.c \
-           Firmware/GD32F3x0_standard_peripheral/Source/gd32f3x0_misc.c
+           Firmware/GD32F3x0_standard_peripheral/Source/gd32f3x0_misc.c \
+           Firmware/GD32F3x0_standard_peripheral/Source/gd32f3x0_rcu.c \
+           Firmware/GD32F3x0_standard_peripheral/Source/gd32f3x0_gpio.c \
+           Firmware/GD32F3x0_standard_peripheral/Source/gd32f3x0_usart.c
 
 OBJS     = $(patsubst %.c,$(BUILD)/obj/%.o,$(SRCS)) \
            $(BUILD)/obj/startup_gd32f3x0.o

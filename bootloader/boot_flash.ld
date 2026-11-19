@@ -2,8 +2,8 @@ ENTRY(Reset_Handler)
 
 MEMORY
 {
-  /* bootloader 代码占前 6K；0x08001800/0x08001C00 两页留给 metadata */
-  FLASH    (rx): ORIGIN = 0x08000000, LENGTH = 0x1800
+  /* bootloader 代码占前 26K；0x08006800/0x08006C00 两页留给 metadata */
+  FLASH    (rx): ORIGIN = 0x08000000, LENGTH = 0x6800
   RAM      (xrw): ORIGIN = 0x20000000, LENGTH = 16K
 }
 
@@ -74,6 +74,6 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  ASSERT(_sidata + SIZEOF(.data) <= 0x08001800,
-         "bootloader code exceeds 6KB")
+  ASSERT(_sidata + SIZEOF(.data) <= 0x08006800,
+         "bootloader code exceeds 26KB")
 }
