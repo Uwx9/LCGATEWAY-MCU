@@ -3,12 +3,12 @@ GD32F330CBT6为84MHZ 16K ram + 128K flash
 
 
 flash布局：
-0x08000000 + 8K   bootloader（6K代码 + 2K metadata）
-0x08002000 + 60K  app
-0x08011000 + 60K  stage
+0x08000000 + 28K  bootloader（26K代码 + 2K metadata）
+0x08007000 + 50K  app
+0x08013800 + 50K  stage
 
 关于elf产物
-app 第一个可执行段在 0x08002000；0x08000000 是 bootloader
+app 第一个可执行段在 0x08007000；0x08000000 是 bootloader
 .data .bss 在flash中位于上面那个可执行段后面，但是会被加载到2M地址处.bss不占文件空间
 .heap_stack紧跟其后，这个节不占文件空间
 

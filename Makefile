@@ -25,8 +25,11 @@ boot: links
 tests: links
 	$(MAKE) -C tests
 
-# rtt 只 attach 并读取 RTT，不烧录、不复位；烧录用 flash/run
-rtt: attach
+# rtt 先擦除、烧 boot，再用 probe-rs run 烧 app 并输出 RTT
+rtt: boot app
+	probe-rs erase --chip $(DEVICE)
+	probe-rs download --chip $(DEVICE) $(BOOT_ELF)
+	probe-rs run --chip $(DEVICE) $(APP_ELF)
 
 run: flash
 
@@ -38,24 +41,28 @@ flash: boot app
 	probe-rs reset --chip $(DEVICE)
 
 # 单独烧录，不擦除其他区域
+fboot: flash-boot
 flash-boot: boot
 	probe-rs download --chip $(DEVICE) $(BOOT_ELF)
 	probe-rs reset --chip $(DEVICE)
 
+fapp: flash-app
 flash-app: app
 	probe-rs download --chip $(DEVICE) $(APP_ELF)
 	probe-rs reset --chip $(DEVICE)
 
+fbootbin: flash-boot-bin
 flash-boot-bin: boot
 	probe-rs download --chip $(DEVICE) --binary-format bin \
 		--base-address 0x08000000 $(BOOT_BIN)
 	probe-rs reset --chip $(DEVICE)
-
+fappbin: flash-app-bin
 flash-app-bin: app
 	probe-rs download --chip $(DEVICE) --binary-format bin \
-		--base-address 0x08002000 $(APP_BIN)
+		--base-address 0x08007000 $(APP_BIN)
 	probe-rs reset --chip $(DEVICE)
 
+ferase: flash-erase
 flash-erase:
 	probe-rs erase --chip $(DEVICE)
 
