@@ -22,6 +22,7 @@
 #define IAP_CMD_PACKETS     0x07U
 #define IAP_CMD_TOTAL_CRC   0x08U
 #define IAP_CMD_FINISH      0x09U
+#define IAP_CMD_BOOT_STATUS 0x0AU
 #define IAP_ACK(cmd)        ((uint8_t)((cmd) | 0x80U))
 #define TEST_CMD            0x7EU
 

@@ -5,7 +5,7 @@ CC     ?= cc
 CFLAGS  = -std=gnu11 -Wall -Wextra -O2
 
 BUILD_DIR = build
-BINS    = test_iap_basic test_do_set test_dma_wrap test_iap_upgrade
+BINS    = test_iap_basic test_do_set test_dma_wrap test_iap_upgrade test_boot_status
 TARGETS = $(addprefix $(BUILD_DIR)/,$(BINS))
 
 COMMON  = frame_io.c iap_flow.c

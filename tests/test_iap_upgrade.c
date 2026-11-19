@@ -1,19 +1,20 @@
 /*
  * 测试: IAP 固件升级（test_iap_upgrade）
- * 测试方法: 读取 tests/fw0.2.elf，把它落在前 60K 的 PT_LOAD 段拼成完整 app 镜像，
+ * 测试方法: 读取 tests/fw0.2.elf，把它落在 50K app 区的 PT_LOAD 段拼成完整 app 镜像，
  *           通过 IAP 协议真实下载、擦写并触发交换重启。
  * 测试目标: 旧固件被新固件替换；重启后版本号变为 ELF 里的版本。
- * 测试目的: 端到端验证 0x03~0x09 全流程和 upgrade 的 60K 拷贝。
+ * 测试目的: 端到端验证 0x03~0x09 全流程和 upgrade 的 50K 拷贝。
  *           新协议没有读版本号指令，重启后用两次“启动升级”的应答
  *           （目标版本不可升级、目标版本+1 可升级）夹出当前版本。
  *
  * 编译:
  *   cc -std=gnu11 -Wall -Wextra -O2 test_iap_upgrade.c frame_io.c iap_flow.c -o test_iap_upgrade
  *
- * 运行（在 tests 目录下）:
- *   ./test_iap_upgrade [/dev/ttyUSB0] [fw0.2.elf]
+ * 运行:
+ *   ./test_iap_upgrade [/dev/ttyUSB0] <app.elf>
+ *   ./test_iap_upgrade <app.elf>          # 串口默认 /dev/ttyUSB0
  *
- * 注意: 固件 ELF 只取 p_paddr 在 0x08002000~0x08010FFF 的 app 段；
+ * 注意: 固件 ELF 只取 p_paddr 在 0x08007000~0x080137FF 的 app 段；
  *       更新前后可以用 RTT 的 ps 看版本和存储布局。
  */
 
@@ -21,14 +22,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "frame_io.h"
 #include "iap_flow.h"
 
 #define ELF_PT_LOAD     1U
-#define APP_BASE        0x08002000U          /* app 链接地址 */
-#define APP_LIMIT       0x08011000U          /* app 区结束，stage 起点 */
+#define APP_BASE        0x08007000U          /* app 链接地址 */
+#define APP_LIMIT       0x08013800U          /* app 区结束，stage 起点 */
 #define APP_MAX         (APP_LIMIT - APP_BASE)
 
 #define VER_STR_OFF     0x150U
@@ -86,7 +88,7 @@ static int read_file(const char *path, uint8_t **out, size_t *out_len)
 }
 
 /*
- * 把 ELF 里落在前 60K 的可加载段按 p_paddr 拼成镜像。
+ * 把 ELF 里落在 50K app 区的可加载段按 p_paddr 拼成镜像。
  * 段之间没覆盖到的字节保持 0xFF，和擦除后的 flash 一致。
  */
 static int build_image(const char *path, uint8_t *image, size_t cap, size_t *out_len)
@@ -215,10 +217,17 @@ static int send_packet(uint16_t id, const uint8_t *data, uint8_t len)
     return e;
 }
 
+static void usage(const char *prog)
+{
+    fprintf(stderr, "usage: %s [device] <app.elf>\n", prog);
+    fprintf(stderr, "       %s <app.elf>        (device defaults to /dev/ttyUSB0)\n", prog);
+}
+
 int main(int argc, char **argv)
 {
-    const char *dev = (argc > 1) ? argv[1] : "/dev/ttyUSB0";
-    const char *elf = (argc > 2) ? argv[2] : "fw_debug_0_2.elf";
+    const char *dev = "/dev/ttyUSB0";
+    const char *elf = NULL;
+    struct stat st;
     uint8_t *image;
     size_t image_size = 0U;
     size_t off;
@@ -230,6 +239,25 @@ int main(int argc, char **argv)
     uint8_t can_upgrade = 0U;
     int keepalive = 0;
     int ret = 1;
+
+    /* 两个参数：设备 + ELF；一个参数且是普通文件：只给 ELF */
+    if (argc == 2) {
+        if ((stat(argv[1], &st) == 0) && S_ISREG(st.st_mode)) {
+            elf = argv[1];
+        } else {
+            dev = argv[1];
+        }
+    } else if (argc >= 3) {
+        dev = argv[1];
+        elf = argv[2];
+    }
+    if ((elf == NULL) || (stat(elf, &st) != 0) || !S_ISREG(st.st_mode)) {
+        if (elf != NULL) {
+            fprintf(stderr, "%s: cannot open app image\n", elf);
+        }
+        usage(argv[0]);
+        return 1;
+    }
 
     setvbuf(stdout, NULL, _IOLBF, 0);
 
@@ -319,7 +347,7 @@ int main(int argc, char **argv)
         goto out;
     }
 
-    printf("0x89 received, swapping 60K and resetting, wait %u s...\n",
+    printf("0x89 received, swapping 50K and resetting, wait %u s...\n",
            (unsigned)SWAP_WAIT_S);
     sleep(SWAP_WAIT_S);
 

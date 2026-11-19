@@ -133,3 +133,18 @@ int iap_finish(void)
     }
     return expect(IAP_ACK(IAP_CMD_FINISH), NULL, 0U, NULL);
 }
+
+int iap_boot_status(uint8_t *mode)
+{
+    uint8_t got = 0U;
+    int e;
+
+    if (send_cmd(IAP_CMD_BOOT_STATUS, NULL, 0U) != 0) {
+        return ACK_ERR_IO;
+    }
+    e = expect(IAP_ACK(IAP_CMD_BOOT_STATUS), NULL, 1U, &got);
+    if ((e == ACK_OK) && (mode != NULL)) {
+        *mode = got;
+    }
+    return e;
+}

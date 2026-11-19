@@ -14,5 +14,7 @@ int iap_packet(uint16_t id, const uint8_t *data, uint8_t data_len);
 int iap_packet_count(uint16_t count);
 int iap_crc(uint16_t crc);
 int iap_finish(void);
+/* bootloader 下载模式返回 ACK_OK，mode=1；app 运行时不回应，超时返回 ACK_ERR_TIMEOUT */
+int iap_boot_status(uint8_t *mode);
 
 #endif
